@@ -1,0 +1,17 @@
+<svg viewBox="0 0 100 100" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <clipPath id="avatarClip">
+      <circle cx="50" cy="50" r="45" />
+    </clipPath>
+    
+    <radialGradient id="ballGlow" cx="50%" cy="50%" r="50%">
+      <stop offset="70%" stop-color="transparent" stop-opacity="0" />
+      <stop offset="90%" stop-color="#00d2ff" stop-opacity="0.5" />
+      <stop offset="100%" stop-color="#0072ff" stop-opacity="0.9" />
+    </radialGradient>
+  </defs>
+
+  <image width="90" height="90" x="5" y="5" href="logo.jpg" clip-path="url(#avatarClip)" />
+
+  <circle cx="50" cy="50" r="45" fill="url(#ballGlow)" pointer-events="none" />
+</svg>

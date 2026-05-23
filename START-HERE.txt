@@ -1,0 +1,14 @@
+DADA / PARISA AI QUICK START
+
+1. Install Node.js
+2. Extract project
+3. Open terminal in project folder
+4. Run:
+   npm install
+5. Create .env from .env.example
+6. Add API keys
+7. Run:
+   npm run dev
+
+Open:
+http://localhost:3000
