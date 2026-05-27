@@ -9,6 +9,38 @@
 <meta name="apple-mobile-web-app-title" content="PARISA AI" />
 <link rel="manifest" href="manifest.json" />
 <link rel="apple-touch-icon" href="logo.jpg" />
+<script>
+  // Register Service Worker for PWA functionality
+  if ("serviceWorker" in navigator) {
+    window.addEventListener("load", async () => {
+      try {
+        const registration = await navigator.serviceWorker.register("/sw.js", {
+          scope: "/",
+          updateViaCache: "none"
+        });
+        console.log("[v0] Service Worker registered successfully");
+        
+        // Check for updates periodically
+        setInterval(() => {
+          registration.update().catch(err => console.log("[v0] SW update check failed:", err));
+        }, 60000);
+      } catch (error) {
+        console.log("[v0] Service Worker registration failed:", error);
+      }
+    });
+  }
+
+  // Request notification permission
+  if ("Notification" in window) {
+    if (Notification.permission === "default") {
+      Notification.requestPermission().then(permission => {
+        if (permission === "granted") {
+          console.log("[v0] Notification permission granted");
+        }
+      });
+    }
+  }
+</script>
 <title>PARISA AI</title>
 <link rel="stylesheet" href="style.css" />
 <link rel="preconnect" href="https://fonts.googleapis.com">

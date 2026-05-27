@@ -21,6 +21,52 @@
   const uid = () => Math.random().toString(36).slice(2, 10);
   const sleep = (ms) => new Promise(r => setTimeout(r, ms));
 
+  // Notification utility - respects user settings
+  const notificationUtil = {
+    async send(title, options = {}) {
+      // Check if notifications are enabled in settings
+      const settings = JSON.parse(localStorage.getItem("parisa-settings") || "{}");
+      if (settings.notificationsDisabled) {
+        console.log("[v0] Notifications disabled by user");
+        return;
+      }
+
+      // Only send if page is not focused
+      if (document.hidden && "Notification" in window) {
+        try {
+          if (Notification.permission === "granted") {
+            // Ensure no browser URLs in notification
+            const cleanOptions = {
+              ...options,
+              badge: options.badge || "/logo.jpg",
+              icon: options.icon || "/logo.jpg",
+              tag: "parisa-message",
+              requireInteraction: false,
+              body: options.body || "নতুন বার্তা",
+              // Remove any URL-related properties except action URLs
+              actions: (options.actions || []).map(a => ({
+                action: a.action,
+                title: a.title
+              }))
+            };
+
+            if (navigator.serviceWorker && navigator.serviceWorker.controller) {
+              await navigator.serviceWorker.controller.postMessage({
+                type: "SHOW_NOTIFICATION",
+                title,
+                options: cleanOptions
+              });
+            } else {
+              new Notification(title, cleanOptions);
+            }
+          }
+        } catch (err) {
+          console.log("[v0] Notification error:", err);
+        }
+      }
+    }
+  };
+
   function escapeHtml(str) {
     return String(str ?? "").replace(/&/g, "&amp;").replace(/</g, "&lt;")
       .replace(/>/g, "&gt;").replace(/"/g, "&quot;");
@@ -377,6 +423,7 @@
     settings.prompt   = $("#inputPrompt").value.trim();
     settings.logoUrl  = $("#logoUrl").value.trim();
     settings.voice    = $("#voiceSelect").value || settings.voice;
+    settings.notificationsDisabled = $("#disableNotifications")?.checked || false;
     saveSettings();
     applyLogo();
     closeSettings();
