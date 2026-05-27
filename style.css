@@ -229,8 +229,12 @@ textarea, input, select { font-family: inherit; color: inherit; }
   background: rgba(180, 240, 250, .04); border: 1px solid rgba(180, 240, 250, .12);
   color: #d8f3fb; text-align: left; font-weight: 500;
   backdrop-filter: blur(10px);
-  display: inline-flex; align-items: center; gap: 10px;
+  display: flex; align-items: center; gap: 10px;
+  cursor: pointer; font-size: 14px; font-family: inherit;
+  transition: all 0.2s ease;
 }
+.side-btn:hover { background: rgba(95, 232, 255, .12); border-color: rgba(95, 232, 255, .28); }
+.side-btn:active { background: rgba(95, 232, 255, .08); }
 .side-btn .ic { width: 18px; height: 18px; }
 
 /* ---------- Chat area ---------- */
