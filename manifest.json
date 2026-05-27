@@ -1,0 +1,23 @@
+{
+  "name": "Parisa AI",
+  "short_name": "Parisa",
+  "start_url": "/",
+  "scope": "/",
+  "display": "standalone",
+  "display_override": ["standalone", "minimal-ui"],
+  "theme_color": "#02141a",
+  "background_color": "#02141a",
+  "description": "পারিসা মেমোরি পোর্টালের AI সহকারী",
+  "icons": [
+    {
+      "src": "logo.jpg",
+      "sizes": "192x192",
+      "type": "image/jpeg"
+    },
+    {
+      "src": "logo.jpg",
+      "sizes": "512x512",
+      "type": "image/jpeg"
+    }
+  ]
+}
