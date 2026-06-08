@@ -404,7 +404,13 @@ ${driveContext}
 ${screenshotList || "স্ক্রিনশট লোড হচ্ছে..."}
 
 --- কল রেকর্ড তালিকা ---
-${callList || "কল রেকর্ড লোড হচ্ছে..."}`;
+${callList || "কল রেকর্ড লোড হচ্ছে..."}
+
+--- ছবি দেখানোর নিয়ম ---
+যখন কোনো স্ক্রিনশট বা ছবি দেখাতে হবে, এই exact format ব্যবহার করো:
+[IMAGE:FILE_ID_HERE]
+উদাহরণ: [IMAGE:1Ev_27tCZbH8xU3eZ1RMEf-UgjMMtz3gr]
+ফাইল ID হলো Drive link-এর /d/ এর পরের অংশ।`;
 }
 
 // ─── AI Providers ─────────────────────────────────────────────────
@@ -559,6 +565,27 @@ function mount(prefix) {
       keys: { gemini: geminiPool.size, groq: groqPool.size, openrouter: orPool.size, deepseek: deepseekPool.size },
     })
   );
+
+  // ── Drive Image Proxy ─────────────────────────────────────────────
+  app.get(prefix + "/image/:fileId", async (req, res) => {
+    const auth = getDriveAuth();
+    if (!auth) return res.status(503).send("Drive not configured");
+    try {
+      const drive = google.drive({ version: "v3", auth });
+      const meta = await drive.files.get({ fileId: req.params.fileId, fields: "mimeType" });
+      const mimeType = meta.data.mimeType || "image/jpeg";
+      res.setHeader("Content-Type", mimeType);
+      res.setHeader("Cache-Control", "public, max-age=3600");
+      const r = await drive.files.get(
+        { fileId: req.params.fileId, alt: "media" },
+        { responseType: "stream" }
+      );
+      r.data.pipe(res);
+    } catch (e) {
+      console.warn("image proxy:", e.message);
+      res.status(404).send("Not found");
+    }
+  });
 
   // ── Chat ──────────────────────────────────────────────────────────
   app.post(prefix + "/chat", async (req, res) => {
