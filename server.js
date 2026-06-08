@@ -141,15 +141,39 @@ async function listFolderDeep(drive, folderId, folderName = "", depth = 0) {
   }
 }
 
+// HTML থেকে plain text বের করো
+function stripHtml(html) {
+  return html
+    .replace(/<style[^>]*>[\s\S]*?<\/style>/gi, "")
+    .replace(/<script[^>]*>[\s\S]*?<\/script>/gi, "")
+    .replace(/<br\s*\/?>/gi, "\n")
+    .replace(/<\/p>/gi, "\n")
+    .replace(/<\/div>/gi, "\n")
+    .replace(/<\/tr>/gi, "\n")
+    .replace(/<\/td>/gi, "\t")
+    .replace(/<[^>]+>/g, "")
+    .replace(/&nbsp;/g, " ")
+    .replace(/&amp;/g, "&")
+    .replace(/&lt;/g, "<")
+    .replace(/&gt;/g, ">")
+    .replace(/&quot;/g, '"')
+    .replace(/\n{3,}/g, "\n\n")
+    .trim();
+}
+
 // টেক্সট ফাইল ডাউনলোড
-async function readTextFile(drive, fileId, fileName) {
+async function readTextFile(drive, fileId, fileName, mimeType = "") {
   try {
     const res = await drive.files.get(
       { fileId, alt: "media" },
       { responseType: "text" }
     );
-    const txt = typeof res.data === "string" ? res.data : JSON.stringify(res.data);
-    return txt && txt.length > 10 ? txt.slice(0, 15000) : null;
+    let txt = typeof res.data === "string" ? res.data : JSON.stringify(res.data);
+    // HTML হলে tags strip করো
+    if (mimeType.includes("html") || txt.trim().startsWith("<")) {
+      txt = stripHtml(txt);
+    }
+    return txt && txt.length > 10 ? txt.slice(0, 20000) : null;
   } catch (e) {
     console.warn(`readFile(${fileName}):`, e.message);
     return null;
@@ -179,7 +203,7 @@ async function refreshDriveMemory() {
       ...ssFiles.map(f => ({ ...f, category: "screenshot" })),
     ];
 
-    // টেক্সট ফাইলগুলো পড়ো
+    // টেক্সট ফাইলগুলো পড়ো (সব HTML ও TXT ফাইল — কোনো limit নেই)
     const textParts = [];
     const textMimes = ["text/plain", "text/html", "application/json", "text/csv"];
     const chatFiles = driveFileList.filter(f =>
@@ -188,12 +212,21 @@ async function refreshDriveMemory() {
        f.name.match(/\.(txt|json|csv|html|htm)$/i))
     );
 
-    for (const f of chatFiles.slice(0, 10)) {
-      const txt = await readTextFile(drive, f.id, f.name);
+    for (const f of chatFiles) {
+      const txt = await readTextFile(drive, f.id, f.name, f.mimeType || "");
       if (txt) {
         textParts.push(`\n\n=== চ্যাট ফাইল: ${f.name} ===\n${txt}`);
         console.log(`✅ Read: ${f.name} (${txt.length} chars)`);
       }
+    }
+
+    // Screenshot metadata memory-তে যোগ করো
+    const ssFilesList = driveFileList.filter(f => f.category === "screenshot");
+    if (ssFilesList.length > 0) {
+      const ssMeta = ssFilesList.map(f =>
+        `- ${f.name} → https://drive.google.com/file/d/${f.id}/view`
+      ).join("\n");
+      textParts.push(`\n\n=== স্ক্রিনশট তালিকা (${ssFilesList.length}টি) ===\n${ssMeta}`);
     }
 
     driveMemoryText = textParts.join("\n");
@@ -312,19 +345,19 @@ const RUBEL_HISTORY = `
 // ─── System Prompt ────────────────────────────────────────────────
 function buildSystemPrompt(userName = "আপনি") {
   const driveContext = driveMemoryText
-    ? `\n\n--- Google Drive থেকে সংগৃহীত চ্যাট হিস্টরি ---\n${driveMemoryText.slice(0, 15000)}\n--- শেষ ---`
+    ? `\n\n--- Google Drive থেকে সংগৃহীত চ্যাট হিস্টরি ---\n${driveMemoryText.slice(0, 80000)}\n--- শেষ ---`
     : "\n\n[Google Drive চ্যাট ফাইল এখনো লোড হয়নি — কিছুক্ষণ পর আবার চেষ্টা করুন]";
 
   const screenshotList = driveFileList
     .filter(f => f.category === "screenshot")
     .map(f => `- ${f.name}: https://drive.google.com/file/d/${f.id}/view`)
-    .slice(0, 50)
+    .slice(0, 200)
     .join("\n");
 
   const callList = driveFileList
     .filter(f => f.category === "call")
     .map(f => `- ${f.name}`)
-    .slice(0, 30)
+    .slice(0, 100)
     .join("\n");
 
   return `তুমি PARISA — পারিসা মেমোরি পোর্টালের অফিশিয়াল AI।
@@ -644,20 +677,6 @@ if (BASE && BASE !== "/" && BASE !== "") mount(BASE);
 
 app.use(BASE, express.static(publicDir));
 app.use(express.static(publicDir));
-
-// ── Root fallback ─────────────────────────────────────────────────
-app.get("/", (req, res) => {
-  const idx = path.join(publicDir, "index.html");
-  res.sendFile(idx, (err) => {
-    if (err) {
-      res.json({
-        status: "✅ PARISA AI is running",
-        version: "2.0",
-        endpoints: ["/healthz", "/chat", "/analyze", "/voice", "/drive"],
-      });
-    }
-  });
-});
 
 app.listen(PORT, "0.0.0.0", () =>
   console.log(`✅ PARISA AI ready — port:${PORT} base:${BASE} tts:${!!MsEdgeTTS}`)
