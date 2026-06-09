@@ -98,7 +98,7 @@ async function callWithFailover(pool, attempt) {
 let driveMemoryText = "";
 let driveFileList   = [];
 let driveLastFetch  = 0;
-const DRIVE_TTL = 30 * 60 * 1000;
+const DRIVE_TTL = 2 * 60 * 60 * 1000; // 2 ঘন্টা — RAM বাঁচাতে
 
 function getDriveAuth() {
   const raw = process.env.GOOGLE_SERVICE_ACCOUNT_JSON || "";
@@ -173,7 +173,7 @@ async function readTextFile(drive, fileId, fileName, mimeType = "") {
     if (mimeType.includes("html") || txt.trim().startsWith("<")) {
       txt = stripHtml(txt);
     }
-    return txt && txt.length > 10 ? txt.slice(0, 20000) : null;
+    return txt && txt.length > 10 ? txt.slice(0, 2500) : null;
   } catch (e) {
     console.warn(`readFile(${fileName}):`, e.message);
     return null;
@@ -191,11 +191,14 @@ async function refreshDriveMemory() {
     const drive = google.drive({ version: "v3", auth });
 
     // সব ফোল্ডার থেকে ফাইল লিস্ট করো
-    const [rootFiles, callFiles, ssFiles] = await Promise.all([
+    const [rootRes, callRes, ssRes] = await Promise.allSettled([
       listFolderDeep(drive, DRIVE_ROOT_FOLDER, "root"),
       listFolderDeep(drive, DRIVE_CALL_FOLDER, "call_records"),
       listFolderDeep(drive, DRIVE_SS_FOLDER, "screenshots"),
     ]);
+    const rootFiles = rootRes.status === "fulfilled" ? rootRes.value : [];
+    const callFiles = callRes.status === "fulfilled" ? callRes.value : [];
+    const ssFiles   = ssRes.status === "fulfilled"   ? ssRes.value   : [];
 
     driveFileList = [
       ...rootFiles.map(f => ({ ...f, category: "chat" })),
@@ -203,33 +206,65 @@ async function refreshDriveMemory() {
       ...ssFiles.map(f => ({ ...f, category: "screenshot" })),
     ];
 
-    // টেক্সট ফাইলগুলো পড়ো (সব HTML ও TXT ফাইল — কোনো limit নেই)
+    // ─── Memory-safe file loading ──────────────────────────────────
     const textParts = [];
     const textMimes = ["text/plain", "text/html", "application/json", "text/csv"];
-    const chatFiles = driveFileList.filter(f =>
+
+    // সব text ফাইল — TXT আগে (গুরুত্বপূর্ণ), তারপর HTML
+    const allChatFiles = driveFileList.filter(f =>
       f.category === "chat" &&
       (textMimes.some(m => (f.mimeType||"").includes(m)) ||
        f.name.match(/\.(txt|json|csv|html|htm)$/i))
     );
 
-    for (const f of chatFiles) {
-      const txt = await readTextFile(drive, f.id, f.name, f.mimeType || "");
-      if (txt) {
-        textParts.push(`\n\n=== চ্যাট ফাইল: ${f.name} ===\n${txt}`);
-        console.log(`✅ Read: ${f.name} (${txt.length} chars)`);
+    // TXT ফাইল আগে, HTML পরে; নাম দিয়ে sort
+    const txtFiles  = allChatFiles.filter(f => (f.mimeType||"").includes("plain") || f.name.endsWith(".txt"));
+    const htmlFiles = allChatFiles.filter(f => !txtFiles.includes(f));
+
+    // Dedup by name — একই নামের ফাইল একবারই পড়ো
+    const seen = new Set();
+    const deduped = [...txtFiles, ...htmlFiles].filter(f => {
+      const key = f.name.trim().toLowerCase();
+      if (seen.has(key)) return false;
+      seen.add(key);
+      return true;
+    });
+
+    // সর্বোচ্চ 15টা ফাইল — RAM বাঁচাতে
+    const MAX_FILES = 15;
+    const toRead = deduped.slice(0, MAX_FILES);
+    let totalChars = 0;
+    const MAX_TOTAL = 12000;
+
+    for (const f of toRead) {
+      if (totalChars >= MAX_TOTAL) break;
+      try {
+        const txt = await readTextFile(drive, f.id, f.name, f.mimeType || "");
+        if (txt) {
+          const chunk = txt.slice(0, Math.min(2500, MAX_TOTAL - totalChars));
+          textParts.push(`\n\n=== চ্যাট ফাইল: ${f.name} ===\n${chunk}`);
+          totalChars += chunk.length;
+          console.log(`✅ Read: ${f.name} (${chunk.length} chars)`);
+        }
+      } catch(e) {
+        console.warn(`Skip ${f.name}:`, e.message);
       }
+      // GC কে সময় দাও
+      await new Promise(r => setTimeout(r, 30));
     }
 
-    // Screenshot metadata memory-তে যোগ করো
+    // Screenshot metadata — শুধু নাম ও ID (link নয় — কম memory)
     const ssFilesList = driveFileList.filter(f => f.category === "screenshot");
     if (ssFilesList.length > 0) {
-      const ssMeta = ssFilesList.map(f =>
-        `- ${f.name} → https://drive.google.com/file/d/${f.id}/view`
+      const ssMeta = ssFilesList.slice(0, 100).map(f =>
+        `- ${f.name} [ID:${f.id}]`
       ).join("\n");
-      textParts.push(`\n\n=== স্ক্রিনশট তালিকা (${ssFilesList.length}টি) ===\n${ssMeta}`);
+      textParts.push(`\n\n=== স্ক্রিনশট (${ssFilesList.length}টি) ===\n${ssMeta}`);
     }
 
     driveMemoryText = textParts.join("\n");
+    // Memory free করো
+    textParts.length = 0;
     driveLastFetch = Date.now();
 
     const cats = { chat: 0, call: 0, screenshot: 0 };
@@ -345,13 +380,13 @@ const RUBEL_HISTORY = `
 // ─── System Prompt ────────────────────────────────────────────────
 function buildSystemPrompt(userName = "আপনি") {
   const driveContext = driveMemoryText
-    ? `\n\n--- Google Drive থেকে সংগৃহীত চ্যাট হিস্টরি ---\n${driveMemoryText.slice(0, 80000)}\n--- শেষ ---`
+    ? `\n\n--- Google Drive থেকে সংগৃহীত চ্যাট হিস্টরি ---\n${driveMemoryText.slice(0, 15000)}\n--- শেষ ---`
     : "\n\n[Google Drive চ্যাট ফাইল এখনো লোড হয়নি — কিছুক্ষণ পর আবার চেষ্টা করুন]";
 
   const screenshotList = driveFileList
     .filter(f => f.category === "screenshot")
     .map(f => `- ${f.name}: https://drive.google.com/file/d/${f.id}/view`)
-    .slice(0, 200)
+    .slice(0, 50)
     .join("\n");
 
   const callList = driveFileList
