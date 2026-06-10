@@ -173,7 +173,10 @@ async function readTextFile(drive, fileId, fileName, mimeType = "") {
     if (mimeType.includes("html") || txt.trim().startsWith("<")) {
       txt = stripHtml(txt);
     }
-    return txt && txt.length > 10 ? txt.slice(0, 2500) : null;
+    if (!txt || txt.length <= 10) return null;
+    // শুরু থেকে ১০০০ + শেষ থেকে ১৫০০ chars — নতুন chat শেষে থাকে
+    if (txt.length <= 2500) return txt;
+    return txt.slice(0, 1000) + "\n...[মাঝের অংশ]...\n" + txt.slice(-1500);
   } catch (e) {
     console.warn(`readFile(${fileName}):`, e.message);
     return null;
@@ -410,8 +413,12 @@ function buildSystemPrompt(userName = "আপনি") {
 তোমার নিয়ম:
 - সর্বদা পরিষ্কার বাংলায় উত্তর দেবে
 - প্রমাণ না থাকলে স্পষ্ট বলবে
-- স্ক্রিনশট বা ফাইল রেফারেন্স করার সময় ড্রাইভ লিংক দেবে
-- ব্যবহারকারীকে সম্মানের সাথে কথা বলবে
+- ব্যবহারকারীকে সম্মানের সাথে ভালোবাসার সাথে কথা বলবে
+- কখনো ফাইলের নাম যেমন "history-context-2.txt", "My Wife...😘😘" ইত্যাদি উল্লেখ করবে না — এগুলো অভ্যন্তরীণ
+- কখনো "রেফারেন্স:", "খণ্ড ২", "টাইমলাইনে উল্লেখ আছে" এই ধরনের technical কথা বলবে না
+- সরাসরি স্বাভাবিকভাবে উত্তর দেবে যেন তুমি সব মনে রাখো
+- স্ক্রিনশট দেখাতে হলে [IMAGE:FILE_ID] format ব্যবহার করো
+- বাংলা সংখ্যা (১২৩৪৫) ব্যবহার করো, English number (12345) নয়
 
 তোমার জ্ঞান:
 
@@ -570,7 +577,19 @@ async function logFirebase(data) {
 
 // ─── Edge TTS ─────────────────────────────────────────────────────
 async function synthesizeEdgeTTS(text, gender = "female") {
-  if (!MsEdgeTTS) return null;
+  if (!MsEdgeTTS) {
+    // Fallback: Google Translate TTS
+    try {
+      const encoded = encodeURIComponent(text.slice(0, 200));
+      const url = `https://translate.google.com/translate_tts?ie=UTF-8&q=${encoded}&tl=bn&client=tw-ob`;
+      const r = await fetch(url, { headers: { "User-Agent": "Mozilla/5.0" } });
+      if (r.ok) {
+        const buf = Buffer.from(await r.arrayBuffer());
+        return buf;
+      }
+    } catch(e) { console.warn("gTTS fallback failed:", e.message); }
+    return null;
+  }
   const voiceName = gender === "male" ? "bn-BD-PradeepNeural" : "bn-BD-NabanitaNeural";
   try {
     const tts = new MsEdgeTTS();
