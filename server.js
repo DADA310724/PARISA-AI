@@ -94,6 +94,65 @@ async function callWithFailover(pool, attempt) {
   throw lastErr || new Error(`${pool.name}: all failed`);
 }
 
+// ─── Chat History Database ────────────────────────────────────────
+import { readFileSync, existsSync } from "fs";
+
+let CHAT_DB = [];
+try {
+  const dbPath = path.join(__dirname, "chat_database.json");
+  if (existsSync(dbPath)) {
+    CHAT_DB = JSON.parse(readFileSync(dbPath, "utf-8"));
+    console.log(`✅ Chat DB loaded — ${CHAT_DB.length} messages`);
+  }
+} catch(e) {
+  console.warn("Chat DB load error:", e.message);
+}
+
+function searchChatDB(query) {
+  if (!CHAT_DB.length) return "";
+  const q = query.toLowerCase();
+
+  // তারিখ খোঁজা — যেমন "18 march", "18/3", "৩১/৭"
+  const datePatterns = [
+    /(\d{1,2})[\/\-\s](\d{1,2})[\/\-\s]?(\d{2,4})?/,
+    /(\d{1,2})\s*(jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)/i,
+  ];
+
+  let results = [];
+
+  // Date-based search
+  for (const pat of datePatterns) {
+    const m = q.match(pat);
+    if (m) {
+      const dayStr = m[1].padStart(2, "0");
+      const monStr = m[2].toString().padStart(2, "0");
+      results = CHAT_DB.filter(msg =>
+        msg.date && msg.date.startsWith(dayStr + "/" + monStr)
+      );
+      if (results.length) break;
+    }
+  }
+
+  // Keyword search যদি date না পাওয়া যায়
+  if (!results.length) {
+    const keywords = q.split(/\s+/).filter(w => w.length > 2);
+    results = CHAT_DB.filter(msg =>
+      keywords.some(kw =>
+        msg.text?.toLowerCase().includes(kw) ||
+        msg.sender?.toLowerCase().includes(kw)
+      )
+    ).slice(0, 50);
+  } else {
+    results = results.slice(0, 100);
+  }
+
+  if (!results.length) return "";
+
+  return results.map(m =>
+    `[${m.platform}][${m.chat}][${m.date} ${m.time}] ${m.sender}: ${m.text}`
+  ).join("\n");
+}
+
 // ─── Google Drive ────────────────────────────────────────────────
 let driveMemoryText = "";
 let driveFileList   = [];
@@ -381,10 +440,16 @@ const RUBEL_HISTORY = `
 `;
 
 // ─── System Prompt ────────────────────────────────────────────────
-function buildSystemPrompt(userName = "আপনি") {
+function buildSystemPrompt(userName = "আপনি", userQuery = "") {
+  // Chat DB থেকে relevant messages খোঁজা
+  const dbResults = userQuery ? searchChatDB(userQuery) : "";
+  const chatDBContext = dbResults
+    ? `\n\n--- চ্যাট ডাটাবেস থেকে প্রাসঙ্গিক মেসেজ ---\n${dbResults}\n--- শেষ ---`
+    : "";
+
   const driveContext = driveMemoryText
-    ? `\n\n--- Google Drive থেকে সংগৃহীত চ্যাট হিস্টরি ---\n${driveMemoryText.slice(0, 15000)}\n--- শেষ ---`
-    : "\n\n[Google Drive চ্যাট ফাইল এখনো লোড হয়নি — কিছুক্ষণ পর আবার চেষ্টা করুন]";
+    ? `\n\n--- Google Drive থেকে সংগৃহীত চ্যাট হিস্টরি ---\n${driveMemoryText.slice(0, 10000)}\n--- শেষ ---`
+    : "";
 
   const screenshotList = driveFileList
     .filter(f => f.category === "screenshot")
@@ -415,10 +480,9 @@ function buildSystemPrompt(userName = "আপনি") {
 - প্রমাণ না থাকলে স্পষ্ট বলবে
 - ব্যবহারকারীকে সম্মানের সাথে ভালোবাসার সাথে কথা বলবে
 - কেউ "Hi", "Hello", "হ্যালো" বললে "ওয়ালাইকুম সালাম" বলবে না — স্বাভাবিক বাংলায় সাড়া দেবে যেমন "হ্যাঁ দাদা, বলুন!" বা "কেমন আছেন দাদা?"
-- কখনোই ফাইলের নাম যেমন "history-context-2.txt", "My Wife...😘😘", "history-context-1.txt" ইত্যাদি উল্লেখ করবে না
-- কখনোই "রেফারেন্স:", "খণ্ড ২", "টাইমলাইনে উল্লেখ আছে", "(রেফারেন্স:", "ফাইল থেকে নেওয়া" এই ধরনের কিছু বলবে না
-- তুমি যা জানো সেটা নিজের মতো করে বলবে — যেন তুমি সব নিজে মনে রাখো
-- কোনো তথ্যের source কখনো mention করবে না
+- কখনো ফাইলের নাম যেমন "history-context-2.txt", "My Wife...😘😘" ইত্যাদি উল্লেখ করবে না — এগুলো অভ্যন্তরীণ
+- কখনো "রেফারেন্স:", "খণ্ড ২", "টাইমলাইনে উল্লেখ আছে" এই ধরনের technical কথা বলবে না
+- সরাসরি স্বাভাবিকভাবে উত্তর দেবে যেন তুমি সব মনে রাখো
 - স্ক্রিনশট দেখাতে হলে [IMAGE:FILE_ID] format ব্যবহার করো
 - বাংলা সংখ্যা (১২৩৪৫) ব্যবহার করো, English number (12345) নয়
 
@@ -442,6 +506,7 @@ function buildSystemPrompt(userName = "আপনি") {
 - বিয়ের বৈধতা প্রমাণের উপায়
 
 ${RUBEL_HISTORY}
+${chatDBContext}
 ${driveContext}
 
 --- স্ক্রিনশট ফাইল তালিকা ---
@@ -451,12 +516,10 @@ ${screenshotList || "স্ক্রিনশট লোড হচ্ছে..."}
 ${callList || "কল রেকর্ড লোড হচ্ছে..."}
 
 --- ছবি দেখানোর নিয়ম ---
-যখন স্ক্রিনশট দেখাতে হবে, এই format ব্যবহার করো:
+যখন কোনো স্ক্রিনশট বা ছবি দেখাতে হবে, এই exact format ব্যবহার করো:
 [IMAGE:FILE_ID_HERE]
 উদাহরণ: [IMAGE:1Ev_27tCZbH8xU3eZ1RMEf-UgjMMtz3gr]
-- স্ক্রিনশট তালিকায় নাম ও তারিখ দেখে সঠিক file ID বেছে নাও
-- একসাথে সর্বোচ্চ ৩টা ছবি দেখাবে
-- ছবির পর সংক্ষেপে বলো এটা কোন প্রসঙ্গের`;
+ফাইল ID হলো Drive link-এর /d/ এর পরের অংশ।`;
 }
 
 // ─── AI Providers ─────────────────────────────────────────────────
@@ -624,44 +687,6 @@ function mount(prefix) {
     })
   );
 
-  // ── Screenshot Vision Analysis ────────────────────────────────────
-  app.get(prefix + "/vision/:fileId", async (req, res) => {
-    const auth = getDriveAuth();
-    if (!auth) return res.status(503).json({ error: "Drive not configured" });
-    try {
-      const drive = google.drive({ version: "v3", auth });
-      const r = await drive.files.get(
-        { fileId: req.params.fileId, alt: "media" },
-        { responseType: "arraybuffer" }
-      );
-      const b64 = Buffer.from(r.data).toString("base64");
-      // Groq Vision দিয়ে analyze
-      const groqKey = [...groqPool][0];
-      if (!groqKey) return res.json({ description: "Vision API unavailable" });
-      const vRes = await fetch("https://api.groq.com/openai/v1/chat/completions", {
-        method: "POST",
-        headers: { "Content-Type": "application/json", "Authorization": `Bearer ${groqKey}` },
-        body: JSON.stringify({
-          model: "meta-llama/llama-4-scout-17b-16e-instruct",
-          messages: [{
-            role: "user",
-            content: [
-              { type: "image_url", image_url: { url: `data:image/jpeg;base64,${b64}` } },
-              { type: "text", text: "এই স্ক্রিনশটে কী লেখা আছে? বাংলায় সংক্ষেপে বলো।" }
-            ]
-          }],
-          max_tokens: 500
-        })
-      });
-      const vData = await vRes.json();
-      const desc = vData?.choices?.[0]?.message?.content || "বিবরণ পাওয়া যায়নি";
-      res.json({ description: desc });
-    } catch (e) {
-      console.warn("vision:", e.message);
-      res.json({ description: "বিবরণ পাওয়া যায়নি" });
-    }
-  });
-
   // ── Drive Image Proxy ─────────────────────────────────────────────
   app.get(prefix + "/image/:fileId", async (req, res) => {
     const auth = getDriveAuth();
@@ -688,7 +713,8 @@ function mount(prefix) {
     try {
       const { messages = [], userName = "আপনি", image } = req.body || {};
       refreshDriveMemory().catch(() => {});
-      const sys = buildSystemPrompt(userName);
+      const lastUserMsg2 = messages[messages.length - 1]?.text || "";
+      const sys = buildSystemPrompt(userName, lastUserMsg2);
       const contents = [];
       for (const m of messages) {
         if (!m || !m.role || !m.text) continue;
@@ -709,8 +735,7 @@ function mount(prefix) {
       };
       const { reply, provider } = await chatWithFallback(body, !!image);
       const finalReply = reply || "দুঃখিত, এই মুহূর্তে উত্তর দিতে পারছি না।";
-      const lastUserMsg = messages[messages.length - 1]?.text || "";
-      logFirebase({ userName, userMessage: lastUserMsg, aiReply: finalReply, provider, hasImage: !!image }).catch(() => {});
+      logFirebase({ userName, userMessage: lastUserMsg2, aiReply: finalReply, provider, hasImage: !!image }).catch(() => {});
       const tgText = `👤 ${userName}: ${lastUserMsg}\n\n🤖 PARISA: ${finalReply}`;
       image ? sendTelegram(tgText, image).catch(() => {}) : sendTelegram(tgText).catch(() => {});
       res.json({ reply: finalReply, provider });

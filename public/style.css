@@ -1,7 +1,13 @@
-@import url('https://fonts.googleapis.com/css2?family=Hind+Siliguri:wght@400;500;600;700&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=Hind+Siliguri:wght@400;500;600;700&family=Noto+Sans+Bengali:wght@400;500;600;700&family=Inter:wght@400;500;600&display=swap');
 
-/* Bengali number fix - সংখ্যা ঠিকমতো দেখাবে */
-* { font-variant-numeric: normal !important; unicode-bidi: normal; }
+/* Bengali/English/Number সব জায়গায় ভালো font */
+* {
+  font-variant-numeric: normal !important;
+  unicode-bidi: normal;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  text-rendering: optimizeLegibility;
+}
 
 /* ---------- Reset & base ---------- */
 * { box-sizing: border-box; }
@@ -11,7 +17,7 @@ html, body {
   overflow-x: hidden; overscroll-behavior: none;
 }
 body {
-  font-family: 'Hind Siliguri', 'Inter', system-ui, -apple-system, Segoe UI, Roboto, sans-serif;
+  font-family: 'Hind Siliguri', 'Noto Sans Bengali', 'Inter', system-ui, -apple-system, Segoe UI, Roboto, sans-serif;
   color: #d8f3fb;
   background: #02141a;
   -webkit-font-smoothing: antialiased;
@@ -678,15 +684,7 @@ textarea, input, select { font-family: inherit; color: inherit; }
 
 /* Drive image in chat */
 .drive-img {
-  max-width: 100%; width: auto;
-  border-radius: 12px; margin: 8px 0;
-  display: block;
-  border: 1px solid rgba(180, 240, 250, .2);
+  max-width: 260px; border-radius: 12px; margin: 6px 0;
+  display: block; border: 1px solid rgba(180, 240, 250, .2);
   box-shadow: 0 4px 16px rgba(0, 0, 0, .3);
-  cursor: pointer;
-}
-/* message bubble ভেতরে ছবি */
-.msg-body img.drive-img {
-  max-width: 100%;
-  height: auto;
 }
