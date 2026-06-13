@@ -1,4 +1,4 @@
-@import url('https://fonts.googleapis.com/css2?family=Noto+Sans+Bengali:wght@300;400;500;600;700family=Hind+Siliguri:wght@400;500;600;700&family=Noto+Sans+Bengali:wght@400;500;600;700family=Hind+Siliguri:wght@400;500;600;700&family=Inter:wght@400;500;600&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=Hind+Siliguri:wght@400;500;600;700&family=Noto+Sans+Bengali:wght@400;500;600;700&family=Inter:wght@400;500;600&display=swap');
 
 /* Bengali/English/Number সব জায়গায় ভালো font */
 * {
@@ -17,7 +17,7 @@ html, body {
   overflow-x: hidden; overscroll-behavior: none;
 }
 body {
-  font-family: 'Noto Sans Bengali', 'Hind Siliguri', 'Inter', system-ui, -apple-system, Segoe UI, Roboto, sans-serif;
+  font-family: 'Hind Siliguri', 'Noto Sans Bengali', 'Inter', system-ui, -apple-system, Segoe UI, Roboto, sans-serif;
   color: #d8f3fb;
   background: #02141a;
   -webkit-font-smoothing: antialiased;
@@ -332,34 +332,6 @@ textarea, input, select { font-family: inherit; color: inherit; }
 .typing span:nth-child(3) { animation-delay: .30s; }
 @keyframes blink { 0%, 80%, 100% { opacity: .25; transform: translateY(0); } 40% { opacity: 1; transform: translateY(-2px); } }
 
-/* TTS loading dots (voice button) */
-.tts-dots { display: inline-flex; gap: 3px; align-items: center; }
-.tts-dots span {
-  width: 5px; height: 5px; border-radius: 50%; background: #5fe8ff;
-  animation: blink 1s infinite ease-in-out;
-}
-.tts-dots span:nth-child(2) { animation-delay: .15s; }
-.tts-dots span:nth-child(3) { animation-delay: .30s; }
-
-/* Drive screenshot images */
-.drive-img {
-  max-width: 100%; border-radius: 10px; margin: 8px 0; display: block;
-  border: 1px solid rgba(95, 232, 255, .20);
-  box-shadow: 0 4px 16px rgba(0, 120, 150, .22);
-  cursor: pointer;
-}
-.drive-img:hover { opacity: .9; }
-
-/* Bengali text — স্পষ্ট ও ভাঙবে না */
-.msg-body {
-  font-family: 'Noto Sans Bengali', 'Hind Siliguri', 'Inter', system-ui, sans-serif;
-  word-break: break-word; overflow-wrap: anywhere;
-  line-height: 1.75;
-}
-.msg-body p, .msg-body li { margin: 4px 0; }
-.msg-body strong { font-weight: 700; color: #a0ecff; }
-.msg-body h1,.msg-body h2,.msg-body h3 { font-size: 15px; font-weight: 700; margin: 8px 0 4px; color: #cff6ff; }
-
 /* ---------- Composer ---------- */
 .composer-wrap {
   padding: 8px 10px 12px;
@@ -603,25 +575,7 @@ textarea, input, select { font-family: inherit; color: inherit; }
 }
 
 /* Eye blink overlay */
-.avatar-blink {
-  position: absolute; top: 34%; left: 50%; transform: translateX(-50%);
-  width: 70%; height: 18%; pointer-events: none;
-  display: flex; justify-content: space-around; align-items: center;
-}
-.avatar-blink::before,
-.avatar-blink::after {
-  content: '';
-  width: 22%; padding-top: 12%;
-  background: transparent;
-  border-radius: 50%;
-  box-shadow: 0 0 0 0 transparent;
-  animation: eyeBlink 4s ease-in-out infinite;
-}
-.avatar-blink::after { animation-delay: .08s; }
-@keyframes eyeBlink {
-  0%, 90%, 100% { transform: scaleY(1); }
-  95% { transform: scaleY(0.05); background: #02141a; border-radius: 2px; }
-}
+.avatar-blink { display: none !important; }
 
 /* Audio waveform bars */
 .audio-wave {
@@ -715,4 +669,25 @@ textarea, input, select { font-family: inherit; color: inherit; }
   max-width: 260px; border-radius: 12px; margin: 6px 0;
   display: block; border: 1px solid rgba(180, 240, 250, .2);
   box-shadow: 0 4px 16px rgba(0, 0, 0, .3);
+}
+
+/* ══ AUDIO CALL CENTERED LAYOUT ══ */
+#audioCallView {
+  display: flex !important;
+  flex-direction: column !important;
+  align-items: center !important;
+  justify-content: center !important;
+  gap: 16px !important;
+}
+.avatar-wrap {
+  margin: 0 auto !important;
+}
+/* Waveform below avatar, not beside */
+.audio-wave {
+  display: flex !important;
+  align-items: center !important;
+  justify-content: center !important;
+  margin: 0 auto !important;
+  width: auto !important;
+  position: static !important;
 }
