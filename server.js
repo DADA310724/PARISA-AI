@@ -97,60 +97,83 @@ async function callWithFailover(pool, attempt) {
 // ─── Chat History Database ────────────────────────────────────────
 import { readFileSync, existsSync } from "fs";
 
-let CHAT_DB = [];
+// Flat messages array — [{chat_id, platform, sender, text, timestamp}]
+let CHAT_MESSAGES = [];
+
 try {
   const dbPath = path.join(__dirname, "chat_database.json");
   if (existsSync(dbPath)) {
-    CHAT_DB = JSON.parse(readFileSync(dbPath, "utf-8"));
-    console.log(`✅ Chat DB loaded — ${CHAT_DB.length} messages`);
+    const raw = JSON.parse(readFileSync(dbPath, "utf-8"));
+    // Structure: [{chat_id, platform, total_messages, messages:[{sender,message,timestamp}]}]
+    for (const chat of raw) {
+      for (const msg of (chat.messages || [])) {
+        CHAT_MESSAGES.push({
+          chat_id:   chat.chat_id   || "",
+          platform:  chat.platform  || "",
+          sender:    msg.sender     || "",
+          text:      msg.message    || "",
+          timestamp: msg.timestamp  || "",  // "YYYY-MM-DD HH:MM:SS"
+        });
+      }
+    }
+    console.log(`✅ Chat DB loaded — ${CHAT_MESSAGES.length} messages across ${raw.length} chats`);
+  } else {
+    console.warn("⚠️  chat_database.json not found — place it next to server.js");
   }
 } catch(e) {
   console.warn("Chat DB load error:", e.message);
 }
 
 function searchChatDB(query) {
-  if (!CHAT_DB.length) return "";
+  if (!CHAT_MESSAGES.length) return "";
   const q = query.toLowerCase();
-
-  // তারিখ খোঁজা — যেমন "18 march", "18/3", "৩১/৭"
-  const datePatterns = [
-    /(\d{1,2})[\/\-\s](\d{1,2})[\/\-\s]?(\d{2,4})?/,
-    /(\d{1,2})\s*(jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)/i,
-  ];
 
   let results = [];
 
-  // Date-based search
-  for (const pat of datePatterns) {
-    const m = q.match(pat);
-    if (m) {
-      const dayStr = m[1].padStart(2, "0");
-      const monStr = m[2].toString().padStart(2, "0");
-      results = CHAT_DB.filter(msg =>
-        msg.date && msg.date.startsWith(dayStr + "/" + monStr)
-      );
-      if (results.length) break;
+  // ── তারিখ খোঁজা: "14 march 2025", "14/3/2025", "14-03-2025" ──
+  const monthMap = {
+    jan:"01",feb:"02",mar:"03",apr:"04",may:"05",jun:"06",
+    jul:"07",aug:"08",sep:"09",oct:"10",nov:"11",dec:"12",
+  };
+  const numRe  = /(\d{1,2})[/\-](\d{1,2})[/\-](\d{2,4})/;
+  const wordRe = /(\d{1,2})\s+(jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)/i;
+
+  let dateFilter = null;
+  const nm = q.match(numRe);
+  if (nm) {
+    const y = nm[3].length === 2 ? "20"+nm[3] : nm[3];
+    dateFilter = t => t.startsWith(`${y}-${nm[2].padStart(2,"0")}-${nm[1].padStart(2,"0")}`);
+  } else {
+    const wm = q.match(wordRe);
+    if (wm) {
+      const mon = monthMap[wm[2].toLowerCase().slice(0,3)] || "01";
+      const day = wm[1].padStart(2,"0");
+      dateFilter = t => t.includes(`-${mon}-${day}`);
     }
   }
 
-  // Keyword search যদি date না পাওয়া যায়
+  if (dateFilter) {
+    results = CHAT_MESSAGES.filter(m => dateFilter(m.timestamp)).slice(0, 80);
+  }
+
+  // ── Keyword search ──
   if (!results.length) {
     const keywords = q.split(/\s+/).filter(w => w.length > 2);
-    results = CHAT_DB.filter(msg =>
+    results = CHAT_MESSAGES.filter(m =>
       keywords.some(kw =>
-        msg.text?.toLowerCase().includes(kw) ||
-        msg.sender?.toLowerCase().includes(kw)
+        m.text.toLowerCase().includes(kw) ||
+        m.sender.toLowerCase().includes(kw) ||
+        m.chat_id.toLowerCase().includes(kw)
       )
-    ).slice(0, 50);
-  } else {
-    results = results.slice(0, 100);
+    ).slice(0, 60);
   }
 
   if (!results.length) return "";
 
-  return results.map(m =>
-    `[${m.platform}][${m.chat}][${m.date} ${m.time}] ${m.sender}: ${m.text}`
-  ).join("\n");
+  return results.map(m => {
+    const ts = m.timestamp.slice(0, 16);
+    return `[${m.platform}][${m.chat_id}][${ts}] ${m.sender}: ${m.text}`;
+  }).join("\n");
 }
 
 // ─── Google Drive ────────────────────────────────────────────────
@@ -426,11 +449,28 @@ const RUBEL_HISTORY = `
 - "আমি যদি sex করতে চাইতাম তাহলে আপনার কাছে কেন যাব — আমি আপনাকে মন থেকে ভালোবাসি।"
 
 ## ডিজিটাল প্রমাণ ইনভেন্টরি:
-- My Wife...😘😘 চ্যাট (১০.৮ এমবি) — দীর্ঘমেয়াদী সম্পর্কের সম্পূর্ণ ইতিহাস
-- Nusrat Parisa...😘😘 চ্যাট (৮.৭ এমবি) — দৈনন্দিন আবেগীয় কথোপকথন
-- Nusrat Jahan Parisa চ্যাট (৫.৪ এমবি) — আইনি ও ব্যক্তিগত আলোচনা
-- Fatema Jannat চ্যাট (৮৮ কেবি) — পারিসার মায়ের সাথে কথোপকথন
-- Hafizur Rahman চ্যাট (৩৮৫ কেবি) — পারিসার বাবার সাথে কথোপকথন
+
+### চ্যাট হিস্টরি (মোট ১৩টি কথোপকথন, ৬৯,০১১টি মেসেজ):
+
+**WhatsApp (৮টি):**
+- My Wife (নুসরাত পারিসা) — ১৫,১৭৭টি মেসেজ, ৩১ আগস্ট ২০২৪ – ২৪ মার্চ ২০২৬
+- Nusrat Parisa — ২৩,৬৪৪টি মেসেজ, ১৯ মার্চ ২০২৪ – ২৪ মার্চ ২০২৬
+- Nusrat Jahan Parisa — ১১,৮৭২টি মেসেজ, ২৯ মে ২০২৪ – ২৪ মার্চ ২০২৬
+- PARISA GP — ২৪৬টি মেসেজ, ১ ডিসেম্বর ২০২৫ – ১৩ ডিসেম্বর ২০২৫
+- Parisa — ১০৮টি মেসেজ, ২৮ জুন ২০২৫
+- Anisha Sister — ১১৩টি মেসেজ, ১৭ জানুয়ারি ২০২৬ – ৩ মার্চ ২০২৬
+- Jerin Harding — ৬০১টি মেসেজ, ২২ অক্টোবর ২০২৪ – ৭ জুন ২০২৬
+- Hafizur Rahman Uncle — ২০টি মেসেজ, ১১ এপ্রিল ২০২৪ – ১ ফেব্রুয়ারি ২০২৬
+
+**Facebook Messenger (৪টি):**
+- Nusrat Janan Parisa — ৭,৫০৫টি মেসেজ, ২৫ আগস্ট ২০২৪ – ১৫ অক্টোবর ২০২৪
+- Hafizur Rahman — ৪৩৩টি মেসেজ, ২৭ জানুয়ারি ২০২৬ – ১৫ এপ্রিল ২০২৬
+- Fatema Jannat — ১২৩টি মেসেজ, ৯ মে ২০২৪
+- Tanha Islam — ৩টি মেসেজ, ১৪ জানুয়ারি ২০২৫ – ১১ মে ২০২৫
+
+**Telegram (১টি):**
+- Telegram Chat — ৯,১৬৬টি মেসেজ, ৪ জানুয়ারি ২০২৫ – ৬ এপ্রিল ২০২৬
+
 - ২৬টি Call Record (নভেম্বর-ডিসেম্বর ২০২৪)
 - হুজুরের ভিডিও জবানবন্দি (গোপন রেকর্ড) — ৫-৬ বার জাদু করার স্বীকারোক্তি
 - স্ক্রিনশট ফোল্ডার: WhatsApp, IMO, Messenger, Telegram, Parisa Scanshot
@@ -642,38 +682,116 @@ async function logFirebase(data) {
   } catch (e) { console.warn("firebase:", e.message); }
 }
 
-// ─── Edge TTS ─────────────────────────────────────────────────────
+// ─── TTS ──────────────────────────────────────────────────────────
+// msedge-tts WebSocket Render/Railway-তে block হয়।
+// তাই সরাসরি Microsoft Edge TTS REST API ব্যবহার করছি।
+
 async function synthesizeEdgeTTS(text, gender = "female") {
-  if (!MsEdgeTTS) {
-    // Fallback: Google Translate TTS
+  const voiceName = gender === "male" ? "bn-BD-PradeepNeural" : "bn-BD-NabanitaNeural";
+  const cleanText  = String(text).slice(0, 1000)
+    .replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;");
+
+  // ── Method 1: edge-tts npm package (local dev) ──
+  if (MsEdgeTTS) {
     try {
-      const encoded = encodeURIComponent(text.slice(0, 200));
-      const url = `https://translate.google.com/translate_tts?ie=UTF-8&q=${encoded}&tl=bn&client=tw-ob`;
-      const r = await fetch(url, { headers: { "User-Agent": "Mozilla/5.0" } });
-      if (r.ok) {
-        const buf = Buffer.from(await r.arrayBuffer());
+      const tts = new MsEdgeTTS();
+      await tts.setMetadata(voiceName, OUTPUT_FORMAT.AUDIO_24KHZ_96KBITRATE_MONO_MP3);
+      const { audioStream } = tts.toStream(text);
+      const chunks = [];
+      await new Promise((resolve) => {
+        audioStream.on("data", d => chunks.push(d));
+        audioStream.on("end",  resolve);
+        audioStream.on("close",resolve);
+        audioStream.on("error", e => { console.warn("edge-tts stream:", e?.message); resolve(); });
+      });
+      if (chunks.length) return Buffer.concat(chunks);
+    } catch(e) { console.warn("edge-tts pkg failed:", e.message); }
+  }
+
+  // ── Method 2: Microsoft Edge TTS via WebSocket (Render/Railway compatible) ──
+  try {
+    const { default: WebSocket } = await import("ws");
+    const connectionId = Math.random().toString(36).slice(2,12).toUpperCase();
+    const requestId    = Math.random().toString(36).slice(2,12).toUpperCase();
+    const date         = new Date().toUTCString();
+
+    const wsUrl = `wss://speech.platform.bing.com/consumer/speech/synthesize/readaloud/edge/v1?TrustedClientToken=6A5AA1D4EAFF4E9FB37E23D68491D6F4&ConnectionId=${connectionId}`;
+
+    const ssml = `<speak version='1.0' xmlns='http://www.w3.org/2001/10/synthesis' xml:lang='bn-BD'>
+      <voice name='${voiceName}'>
+        <prosody rate='0%' pitch='0Hz'>${cleanText}</prosody>
+      </voice>
+    </speak>`;
+
+    const configMsg = `X-Timestamp:${date}\r\nContent-Type:application/json; charset=utf-8\r\nPath:speech.config\r\n\r\n{"context":{"synthesis":{"audio":{"metadataoptions":{"sentenceBoundaryEnabled":"false","wordBoundaryEnabled":"false"},"outputFormat":"audio-24khz-96kbitrate-mono-mp3"}}}}`;
+    const ssmlMsg   = `X-Timestamp:${date}\r\nX-RequestId:${requestId}\r\nContent-Type:application/ssml+xml\r\nPath:ssml\r\n\r\n${ssml}`;
+
+    const audioChunks = [];
+    await new Promise((resolve, reject) => {
+      const ws = new WebSocket(wsUrl, {
+        headers: {
+          "Pragma": "no-cache",
+          "Cache-Control": "no-cache",
+          "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
+          "Origin": "chrome-extension://jdiccldimpdaibmpdkjnbmckianbfold",
+        }
+      });
+      const timeout = setTimeout(() => { ws.terminate(); reject(new Error("WS timeout")); }, 15000);
+
+      ws.on("open", () => {
+        ws.send(configMsg);
+        ws.send(ssmlMsg);
+      });
+
+      ws.on("message", (data) => {
+        if (typeof data === "string") {
+          if (data.includes("Path:turn.end")) {
+            clearTimeout(timeout);
+            ws.close();
+            resolve();
+          }
+        } else {
+          // binary audio data — header 2 bytes length + header + audio
+          try {
+            const buf = Buffer.isBuffer(data) ? data : Buffer.from(data);
+            const headerLen = buf.readUInt16BE(0);
+            const audio = buf.slice(2 + headerLen);
+            if (audio.length > 0) audioChunks.push(audio);
+          } catch(e) { /* skip malformed */ }
+        }
+      });
+
+      ws.on("error", (e) => { clearTimeout(timeout); reject(e); });
+      ws.on("close", () => { clearTimeout(timeout); resolve(); });
+    });
+
+    if (audioChunks.length) {
+      console.log(`✅ TTS (WebSocket): ${audioChunks.length} chunks, voice=${voiceName}`);
+      return Buffer.concat(audioChunks);
+    }
+  } catch(e) { console.warn("TTS WebSocket failed:", e.message); }
+
+  // ── Method 3: Google Translate TTS (শেষ fallback, ছোট text) ──
+  try {
+    const encoded = encodeURIComponent(String(text).slice(0, 180));
+    const url = `https://translate.google.com/translate_tts?ie=UTF-8&q=${encoded}&tl=bn&client=tw-ob&ttsspeed=0.9`;
+    const r = await fetch(url, {
+      headers: {
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
+        "Referer": "https://translate.google.com/",
+      }
+    });
+    if (r.ok) {
+      const buf = Buffer.from(await r.arrayBuffer());
+      if (buf.length > 100) {
+        console.log("✅ TTS (Google fallback):", buf.length, "bytes");
         return buf;
       }
-    } catch(e) { console.warn("gTTS fallback failed:", e.message); }
-    return null;
-  }
-  const voiceName = gender === "male" ? "bn-BD-PradeepNeural" : "bn-BD-NabanitaNeural";
-  try {
-    const tts = new MsEdgeTTS();
-    await tts.setMetadata(voiceName, OUTPUT_FORMAT.AUDIO_24KHZ_96KBITRATE_MONO_MP3);
-    const { audioStream } = tts.toStream(text);
-    const chunks = [];
-    await new Promise((resolve, reject) => {
-      audioStream.on("data", (d) => chunks.push(d));
-      audioStream.on("end", resolve);
-      audioStream.on("close", resolve);
-      audioStream.on("error", (e) => {
-        console.warn("edge-tts stream error:", e?.message || e);
-        resolve();
-      });
-    });
-    return chunks.length ? Buffer.concat(chunks) : null;
-  } catch (e) { console.warn("edge-tts:", e.message); return null; }
+    }
+  } catch(e) { console.warn("Google TTS fallback failed:", e.message); }
+
+  console.warn("❌ All TTS methods failed");
+  return null;
 }
 
 // ─── Routes ───────────────────────────────────────────────────────
