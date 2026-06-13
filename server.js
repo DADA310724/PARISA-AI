@@ -94,86 +94,95 @@ async function callWithFailover(pool, attempt) {
   throw lastErr || new Error(`${pool.name}: all failed`);
 }
 
+// ─── Reply Text Cleaner ──────────────────────────────────────────
+function cleanReply(text) {
+  if (!text) return text;
+  return text
+    // bold/italic markdown বাদ
+    .replace(/\*\*([^*]+)\*\*/g, "$1")
+    .replace(/\*([^*]+)\*/g, "$1")
+    .replace(/__([^_]+)__/g, "$1")
+    .replace(/_([^_]+)_/g, "$1")
+    // heading বাদ
+    .replace(/^#{1,6}\s+/gm, "")
+    // bullet list বাদ
+    .replace(/^[\*\-•]\s+/gm, "")
+    // numbered list বাদ — কিন্তু বাংলা সংখ্যায় রাখো
+    .replace(/^(\d+)\.\s+/gm, (_, n) => {
+      const bn = "০১২৩৪৫৬৭৮৯";
+      const num = String(n).split("").map(d => bn[parseInt(d)] || d).join("");
+      return num + ". ";
+    })
+    // English number → বাংলা number
+    .replace(/\b(\d+)\b/g, (n) => {
+      const bn = "০১২৩৪৫৬৭৮৯";
+      return String(n).split("").map(d => bn[parseInt(d)] || d).join("");
+    })
+    // ইমোজি বাদ (basic range)
+    .replace(/[\u{1F300}-\u{1FAFF}]/gu, "")
+    .replace(/[\u{2600}-\u{27BF}]/gu, "")
+    // বাড়তি blank line কমাও
+    .replace(/\n{3,}/g, "\n\n")
+    .trim();
+}
+
 // ─── Chat History Database ────────────────────────────────────────
 import { readFileSync, existsSync } from "fs";
 
-// Flat messages array — [{chat_id, platform, sender, text, timestamp}]
-let CHAT_MESSAGES = [];
-
+let CHAT_DB = [];
 try {
   const dbPath = path.join(__dirname, "chat_database.json");
   if (existsSync(dbPath)) {
-    const raw = JSON.parse(readFileSync(dbPath, "utf-8"));
-    // Structure: [{chat_id, platform, total_messages, messages:[{sender,message,timestamp}]}]
-    for (const chat of raw) {
-      for (const msg of (chat.messages || [])) {
-        CHAT_MESSAGES.push({
-          chat_id:   chat.chat_id   || "",
-          platform:  chat.platform  || "",
-          sender:    msg.sender     || "",
-          text:      msg.message    || "",
-          timestamp: msg.timestamp  || "",  // "YYYY-MM-DD HH:MM:SS"
-        });
-      }
-    }
-    console.log(`✅ Chat DB loaded — ${CHAT_MESSAGES.length} messages across ${raw.length} chats`);
-  } else {
-    console.warn("⚠️  chat_database.json not found — place it next to server.js");
+    CHAT_DB = JSON.parse(readFileSync(dbPath, "utf-8"));
+    console.log(`✅ Chat DB loaded — ${CHAT_DB.length} messages`);
   }
 } catch(e) {
   console.warn("Chat DB load error:", e.message);
 }
 
 function searchChatDB(query) {
-  if (!CHAT_MESSAGES.length) return "";
+  if (!CHAT_DB.length) return "";
   const q = query.toLowerCase();
+
+  // তারিখ খোঁজা — যেমন "18 march", "18/3", "৩১/৭"
+  const datePatterns = [
+    /(\d{1,2})[\/\-\s](\d{1,2})[\/\-\s]?(\d{2,4})?/,
+    /(\d{1,2})\s*(jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)/i,
+  ];
 
   let results = [];
 
-  // ── তারিখ খোঁজা: "14 march 2025", "14/3/2025", "14-03-2025" ──
-  const monthMap = {
-    jan:"01",feb:"02",mar:"03",apr:"04",may:"05",jun:"06",
-    jul:"07",aug:"08",sep:"09",oct:"10",nov:"11",dec:"12",
-  };
-  const numRe  = /(\d{1,2})[/\-](\d{1,2})[/\-](\d{2,4})/;
-  const wordRe = /(\d{1,2})\s+(jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)/i;
-
-  let dateFilter = null;
-  const nm = q.match(numRe);
-  if (nm) {
-    const y = nm[3].length === 2 ? "20"+nm[3] : nm[3];
-    dateFilter = t => t.startsWith(`${y}-${nm[2].padStart(2,"0")}-${nm[1].padStart(2,"0")}`);
-  } else {
-    const wm = q.match(wordRe);
-    if (wm) {
-      const mon = monthMap[wm[2].toLowerCase().slice(0,3)] || "01";
-      const day = wm[1].padStart(2,"0");
-      dateFilter = t => t.includes(`-${mon}-${day}`);
+  // Date-based search
+  for (const pat of datePatterns) {
+    const m = q.match(pat);
+    if (m) {
+      const dayStr = m[1].padStart(2, "0");
+      const monStr = m[2].toString().padStart(2, "0");
+      results = CHAT_DB.filter(msg =>
+        msg.date && msg.date.startsWith(dayStr + "/" + monStr)
+      );
+      if (results.length) break;
     }
   }
 
-  if (dateFilter) {
-    results = CHAT_MESSAGES.filter(m => dateFilter(m.timestamp)).slice(0, 80);
-  }
-
-  // ── Keyword search ──
+  // Keyword search যদি date না পাওয়া যায়
   if (!results.length) {
     const keywords = q.split(/\s+/).filter(w => w.length > 2);
-    results = CHAT_MESSAGES.filter(m =>
+    results = CHAT_DB.filter(msg =>
       keywords.some(kw =>
-        m.text.toLowerCase().includes(kw) ||
-        m.sender.toLowerCase().includes(kw) ||
-        m.chat_id.toLowerCase().includes(kw)
+        msg.text?.toLowerCase().includes(kw) ||
+        msg.sender?.toLowerCase().includes(kw)
       )
-    ).slice(0, 60);
+    ).slice(0, 50);
+  } else {
+    results = results.slice(0, 100);
   }
 
   if (!results.length) return "";
 
-  return results.map(m => {
-    const ts = m.timestamp.slice(0, 16);
-    return `[${m.platform}][${m.chat_id}][${ts}] ${m.sender}: ${m.text}`;
-  }).join("\n");
+  return results.map(m =>
+    `[${m.platform}][${m.chat}][${m.date} ${m.time}] ${m.sender}: ${m.text}`
+  ).join("\n");
 }
 
 // ─── Google Drive ────────────────────────────────────────────────
@@ -362,6 +371,13 @@ async function refreshDriveMemory() {
 
 refreshDriveMemory().catch(() => {});
 
+// ── প্রতি ৩০ মিনিটে Drive auto-refresh ──────────────────────────────
+// নতুন screenshot/ছবি/ফাইল দিলে AI automatically জেনে নেবে
+setInterval(() => {
+  console.log("🔄 Drive auto-refresh...");
+  refreshDriveMemory().catch(e => console.warn("Auto-refresh error:", e.message));
+}, 30 * 60 * 1000); // ৩০ মিনিট
+
 // ─── রুবেলের জীবনের পূর্ণ ইতিহাস (AI এর স্থায়ী স্মৃতি) ──────────
 const RUBEL_HISTORY = `
 === রুবেল ও পারিসার সম্পর্কের সম্পূর্ণ ইতিহাস ===
@@ -449,28 +465,11 @@ const RUBEL_HISTORY = `
 - "আমি যদি sex করতে চাইতাম তাহলে আপনার কাছে কেন যাব — আমি আপনাকে মন থেকে ভালোবাসি।"
 
 ## ডিজিটাল প্রমাণ ইনভেন্টরি:
-
-### চ্যাট হিস্টরি (মোট ১৩টি কথোপকথন, ৬৯,০১১টি মেসেজ):
-
-**WhatsApp (৮টি):**
-- My Wife (নুসরাত পারিসা) — ১৫,১৭৭টি মেসেজ, ৩১ আগস্ট ২০২৪ – ২৪ মার্চ ২০২৬
-- Nusrat Parisa — ২৩,৬৪৪টি মেসেজ, ১৯ মার্চ ২০২৪ – ২৪ মার্চ ২০২৬
-- Nusrat Jahan Parisa — ১১,৮৭২টি মেসেজ, ২৯ মে ২০২৪ – ২৪ মার্চ ২০২৬
-- PARISA GP — ২৪৬টি মেসেজ, ১ ডিসেম্বর ২০২৫ – ১৩ ডিসেম্বর ২০২৫
-- Parisa — ১০৮টি মেসেজ, ২৮ জুন ২০২৫
-- Anisha Sister — ১১৩টি মেসেজ, ১৭ জানুয়ারি ২০২৬ – ৩ মার্চ ২০২৬
-- Jerin Harding — ৬০১টি মেসেজ, ২২ অক্টোবর ২০২৪ – ৭ জুন ২০২৬
-- Hafizur Rahman Uncle — ২০টি মেসেজ, ১১ এপ্রিল ২০২৪ – ১ ফেব্রুয়ারি ২০২৬
-
-**Facebook Messenger (৪টি):**
-- Nusrat Janan Parisa — ৭,৫০৫টি মেসেজ, ২৫ আগস্ট ২০২৪ – ১৫ অক্টোবর ২০২৪
-- Hafizur Rahman — ৪৩৩টি মেসেজ, ২৭ জানুয়ারি ২০২৬ – ১৫ এপ্রিল ২০২৬
-- Fatema Jannat — ১২৩টি মেসেজ, ৯ মে ২০২৪
-- Tanha Islam — ৩টি মেসেজ, ১৪ জানুয়ারি ২০২৫ – ১১ মে ২০২৫
-
-**Telegram (১টি):**
-- Telegram Chat — ৯,১৬৬টি মেসেজ, ৪ জানুয়ারি ২০২৫ – ৬ এপ্রিল ২০২৬
-
+- My Wife...😘😘 চ্যাট (১০.৮ এমবি) — দীর্ঘমেয়াদী সম্পর্কের সম্পূর্ণ ইতিহাস
+- Nusrat Parisa...😘😘 চ্যাট (৮.৭ এমবি) — দৈনন্দিন আবেগীয় কথোপকথন
+- Nusrat Jahan Parisa চ্যাট (৫.৪ এমবি) — আইনি ও ব্যক্তিগত আলোচনা
+- Fatema Jannat চ্যাট (৮৮ কেবি) — পারিসার মায়ের সাথে কথোপকথন
+- Hafizur Rahman চ্যাট (৩৮৫ কেবি) — পারিসার বাবার সাথে কথোপকথন
 - ২৬টি Call Record (নভেম্বর-ডিসেম্বর ২০২৪)
 - হুজুরের ভিডিও জবানবন্দি (গোপন রেকর্ড) — ৫-৬ বার জাদু করার স্বীকারোক্তি
 - স্ক্রিনশট ফোল্ডার: WhatsApp, IMO, Messenger, Telegram, Parisa Scanshot
@@ -519,12 +518,20 @@ function buildSystemPrompt(userName = "আপনি", userQuery = "") {
 - সর্বদা পরিষ্কার বাংলায় উত্তর দেবে
 - প্রমাণ না থাকলে স্পষ্ট বলবে
 - ব্যবহারকারীকে সম্মানের সাথে ভালোবাসার সাথে কথা বলবে
-- কেউ "Hi", "Hello", "হ্যালো" বললে "ওয়ালাইকুম সালাম" বলবে না — স্বাভাবিক বাংলায় সাড়া দেবে যেমন "হ্যাঁ দাদা, বলুন!" বা "কেমন আছেন দাদা?"
-- কখনো ফাইলের নাম যেমন "history-context-2.txt", "My Wife...😘😘" ইত্যাদি উল্লেখ করবে না — এগুলো অভ্যন্তরীণ
+- কেউ "Hi", "Hello", "হ্যালো" বললে স্বাভাবিক বাংলায় সাড়া দেবে
+- কখনো ফাইলের নাম যেমন "history-context-2.txt" ইত্যাদি উল্লেখ করবে না
 - কখনো "রেফারেন্স:", "খণ্ড ২", "টাইমলাইনে উল্লেখ আছে" এই ধরনের technical কথা বলবে না
 - সরাসরি স্বাভাবিকভাবে উত্তর দেবে যেন তুমি সব মনে রাখো
 - স্ক্রিনশট দেখাতে হলে [IMAGE:FILE_ID] format ব্যবহার করো
-- বাংলা সংখ্যা (১২৩৪৫) ব্যবহার করো, English number (12345) নয়
+
+⚠️ TEXT FORMAT — এই নিয়মগুলো কঠোরভাবে মানতে হবে:
+- কখনো ** bold ** বা __ বা # হেডার ব্যবহার করবে না
+- কখনো bullet point (-, *, •) দিয়ে list বানাবে না
+- কখনো numbered list (1. 2. 3.) বানাবে না
+- সব উত্তর সাধারণ paragraph আকারে লিখবে
+- বাংলা সংখ্যা (১, ২, ৩) ব্যবহার করবে, English number (1, 2, 3) নয়
+- ইমোজি ব্যবহার করবে না
+- শুধু বাংলা text — কোনো markdown formatting নেই
 
 তোমার জ্ঞান:
 
@@ -682,156 +689,38 @@ async function logFirebase(data) {
   } catch (e) { console.warn("firebase:", e.message); }
 }
 
-// ─── TTS ──────────────────────────────────────────────────────────
-// msedge-tts WebSocket Render/Railway-তে block হয়।
-// তাই সরাসরি Microsoft Edge TTS REST API ব্যবহার করছি।
-
-function stripEmoji(str) {
-  return str
-    .replace(/[\u{1F600}-\u{1F64F}]/gu, "")
-    .replace(/[\u{1F300}-\u{1F5FF}]/gu, "")
-    .replace(/[\u{1F680}-\u{1F6FF}]/gu, "")
-    .replace(/[\u{1F700}-\u{1F77F}]/gu, "")
-    .replace(/[\u{1F780}-\u{1F7FF}]/gu, "")
-    .replace(/[\u{1F800}-\u{1F8FF}]/gu, "")
-    .replace(/[\u{1F900}-\u{1F9FF}]/gu, "")
-    .replace(/[\u{1FA00}-\u{1FA6F}]/gu, "")
-    .replace(/[\u{1FA70}-\u{1FAFF}]/gu, "")
-    .replace(/[\u{2600}-\u{26FF}]/gu, "")
-    .replace(/[\u{2700}-\u{27BF}]/gu, "")
-    .replace(/[\u{FE00}-\u{FE0F}]/gu, "")
-    .replace(/[\u{1F1E0}-\u{1F1FF}]/gu, "")
-    .replace(/[\u{E0020}-\u{E007F}]/gu, "")
-    .replace(/\s+/g, " ")
-    .trim();
-}
-
-function stripForTTS(str) {
-  return stripEmoji(str)
-    .replace(/\[IMAGE:[^\]]*\]/g, "")
-    .replace(/#{1,6}\s+/g, "")
-    .replace(/\*\*(.+?)\*\*/gs, "$1")
-    .replace(/\*(.+?)\*/gs, "$1")
-    .replace(/__(.+?)__/gs, "$1")
-    .replace(/_(.+?)_/gs, "$1")
-    .replace(/`{1,3}[^`]*`{1,3}/g, "")
-    .replace(/^[-*•]\s+/gm, "")
-    .replace(/^\d+\.\s+/gm, "")
-    .replace(/^>\s*/gm, "")
-    .replace(/---+/g, "")
-    .replace(/\[([^\]]+)\]\([^)]+\)/g, "$1")
-    .replace(/\n{2,}/g, "। ")
-    .replace(/\n/g, " ")
-    .replace(/\s+/g, " ")
-    .trim();
-}
-
+// ─── Edge TTS ─────────────────────────────────────────────────────
 async function synthesizeEdgeTTS(text, gender = "female") {
-  const voiceName  = gender === "male" ? "bn-BD-PradeepNeural" : "bn-BD-NabanitaNeural";
-  const ttsText    = stripForTTS(String(text)).slice(0, 1000);
-  const cleanText  = ttsText.replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;");
-
-  // ── Method 1: edge-tts npm package (local dev) ──
-  if (MsEdgeTTS) {
+  if (!MsEdgeTTS) {
+    // Fallback: Google Translate TTS
     try {
-      const tts = new MsEdgeTTS();
-      await tts.setMetadata(voiceName, OUTPUT_FORMAT.AUDIO_24KHZ_96KBITRATE_MONO_MP3);
-      const { audioStream } = tts.toStream(ttsText);
-      const chunks = [];
-      await new Promise((resolve) => {
-        audioStream.on("data", d => chunks.push(d));
-        audioStream.on("end",  resolve);
-        audioStream.on("close",resolve);
-        audioStream.on("error", e => { console.warn("edge-tts stream:", e?.message); resolve(); });
-      });
-      if (chunks.length) return Buffer.concat(chunks);
-    } catch(e) { console.warn("edge-tts pkg failed:", e.message); }
-  }
-
-  // ── Method 2: Microsoft Edge TTS via WebSocket (Render/Railway compatible) ──
-  try {
-    const { default: WebSocket } = await import("ws");
-    const connectionId = Math.random().toString(36).slice(2,12).toUpperCase();
-    const requestId    = Math.random().toString(36).slice(2,12).toUpperCase();
-    const date         = new Date().toUTCString();
-
-    const wsUrl = `wss://speech.platform.bing.com/consumer/speech/synthesize/readaloud/edge/v1?TrustedClientToken=6A5AA1D4EAFF4E9FB37E23D68491D6F4&ConnectionId=${connectionId}`;
-
-    const ssml = `<speak version='1.0' xmlns='http://www.w3.org/2001/10/synthesis' xml:lang='bn-BD'>
-      <voice name='${voiceName}'>
-        <prosody rate='0%' pitch='0Hz'>${cleanText}</prosody>
-      </voice>
-    </speak>`;
-
-    const configMsg = `X-Timestamp:${date}\r\nContent-Type:application/json; charset=utf-8\r\nPath:speech.config\r\n\r\n{"context":{"synthesis":{"audio":{"metadataoptions":{"sentenceBoundaryEnabled":"false","wordBoundaryEnabled":"false"},"outputFormat":"audio-24khz-96kbitrate-mono-mp3"}}}}`;
-    const ssmlMsg   = `X-Timestamp:${date}\r\nX-RequestId:${requestId}\r\nContent-Type:application/ssml+xml\r\nPath:ssml\r\n\r\n${ssml}`;
-
-    const audioChunks = [];
-    await new Promise((resolve, reject) => {
-      const ws = new WebSocket(wsUrl, {
-        headers: {
-          "Pragma": "no-cache",
-          "Cache-Control": "no-cache",
-          "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
-          "Origin": "chrome-extension://jdiccldimpdaibmpdkjnbmckianbfold",
-        }
-      });
-      const timeout = setTimeout(() => { ws.terminate(); reject(new Error("WS timeout")); }, 15000);
-
-      ws.on("open", () => {
-        ws.send(configMsg);
-        ws.send(ssmlMsg);
-      });
-
-      ws.on("message", (data) => {
-        if (typeof data === "string") {
-          if (data.includes("Path:turn.end")) {
-            clearTimeout(timeout);
-            ws.close();
-            resolve();
-          }
-        } else {
-          // binary audio data — header 2 bytes length + header + audio
-          try {
-            const buf = Buffer.isBuffer(data) ? data : Buffer.from(data);
-            const headerLen = buf.readUInt16BE(0);
-            const audio = buf.slice(2 + headerLen);
-            if (audio.length > 0) audioChunks.push(audio);
-          } catch(e) { /* skip malformed */ }
-        }
-      });
-
-      ws.on("error", (e) => { clearTimeout(timeout); reject(e); });
-      ws.on("close", () => { clearTimeout(timeout); resolve(); });
-    });
-
-    if (audioChunks.length) {
-      console.log(`✅ TTS (WebSocket): ${audioChunks.length} chunks, voice=${voiceName}`);
-      return Buffer.concat(audioChunks);
-    }
-  } catch(e) { console.warn("TTS WebSocket failed:", e.message); }
-
-  // ── Method 3: Google Translate TTS (শেষ fallback, ছোট text) ──
-  try {
-    const encoded = encodeURIComponent(String(text).slice(0, 180));
-    const url = `https://translate.google.com/translate_tts?ie=UTF-8&q=${encoded}&tl=bn&client=tw-ob&ttsspeed=0.9`;
-    const r = await fetch(url, {
-      headers: {
-        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
-        "Referer": "https://translate.google.com/",
-      }
-    });
-    if (r.ok) {
-      const buf = Buffer.from(await r.arrayBuffer());
-      if (buf.length > 100) {
-        console.log("✅ TTS (Google fallback):", buf.length, "bytes");
+      const encoded = encodeURIComponent(text.slice(0, 200));
+      const url = `https://translate.google.com/translate_tts?ie=UTF-8&q=${encoded}&tl=bn&client=tw-ob`;
+      const r = await fetch(url, { headers: { "User-Agent": "Mozilla/5.0" } });
+      if (r.ok) {
+        const buf = Buffer.from(await r.arrayBuffer());
         return buf;
       }
-    }
-  } catch(e) { console.warn("Google TTS fallback failed:", e.message); }
-
-  console.warn("❌ All TTS methods failed");
-  return null;
+    } catch(e) { console.warn("gTTS fallback failed:", e.message); }
+    return null;
+  }
+  const voiceName = gender === "male" ? "bn-BD-PradeepNeural" : "bn-BD-NabanitaNeural";
+  try {
+    const tts = new MsEdgeTTS();
+    await tts.setMetadata(voiceName, OUTPUT_FORMAT.AUDIO_24KHZ_96KBITRATE_MONO_MP3);
+    const { audioStream } = tts.toStream(text);
+    const chunks = [];
+    await new Promise((resolve, reject) => {
+      audioStream.on("data", (d) => chunks.push(d));
+      audioStream.on("end", resolve);
+      audioStream.on("close", resolve);
+      audioStream.on("error", (e) => {
+        console.warn("edge-tts stream error:", e?.message || e);
+        resolve();
+      });
+    });
+    return chunks.length ? Buffer.concat(chunks) : null;
+  } catch (e) { console.warn("edge-tts:", e.message); return null; }
 }
 
 // ─── Routes ───────────────────────────────────────────────────────
@@ -896,7 +785,8 @@ function mount(prefix) {
         generationConfig: { temperature: 0.85, maxOutputTokens: 2048 },
       };
       const { reply, provider } = await chatWithFallback(body, !!image);
-      const finalReply = reply || "দুঃখিত, এই মুহূর্তে উত্তর দিতে পারছি না।";
+      const rawReply = reply || "দুঃখিত, এই মুহূর্তে উত্তর দিতে পারছি না।";
+      const finalReply = cleanReply(rawReply);
       logFirebase({ userName, userMessage: lastUserMsg2, aiReply: finalReply, provider, hasImage: !!image }).catch(() => {});
       const tgText = `👤 ${userName}: ${lastUserMsg2}\n\n🤖 PARISA: ${finalReply}`;
       image ? sendTelegram(tgText, image).catch(() => {}) : sendTelegram(tgText).catch(() => {});
