@@ -239,8 +239,23 @@ PARISA MEMORY PORTAL এ আপনাকে স্বাগতম।
     return voices[0] || null;
   }
 
+  function stripEmoji(str) {
+    return str
+      .replace(/[\u{1F600}-\u{1F64F}]/gu, "")
+      .replace(/[\u{1F300}-\u{1F5FF}]/gu, "")
+      .replace(/[\u{1F680}-\u{1F6FF}]/gu, "")
+      .replace(/[\u{1F900}-\u{1F9FF}]/gu, "")
+      .replace(/[\u{1FA00}-\u{1FAFF}]/gu, "")
+      .replace(/[\u{2600}-\u{26FF}]/gu, "")
+      .replace(/[\u{2700}-\u{27BF}]/gu, "")
+      .replace(/[\u{FE00}-\u{FE0F}]/gu, "")
+      .replace(/\s+/g, " ").trim();
+  }
+
   function speak(text, btn = null) {
     if (!text || !text.trim()) return;
+    text = stripEmoji(text);
+    if (!text) return;
 
     // আগের audio বন্ধ করো
     if (currentAudio) { currentAudio.pause(); currentAudio = null; }
@@ -280,6 +295,8 @@ PARISA MEMORY PORTAL এ আপনাকে স্বাগতম।
   function speakAndWait(text) {
     return new Promise((resolve) => {
       if (!text || !text.trim()) return resolve();
+      text = stripEmoji(text);
+      if (!text) return resolve();
       if (currentAudio) { currentAudio.pause(); currentAudio = null; }
       if (currentUtter) { speechSynthesis.cancel(); currentUtter = null; }
 
