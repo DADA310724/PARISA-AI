@@ -275,7 +275,7 @@ PARISA MEMORY PORTAL এ আপনাকে স্বাগতম।
   }
 
   function stripForTTS(str) {
-    return stripEmoji(str)
+    let text = stripEmoji(str)
       .replace(/\[IMAGE:[^\]]*\]/g, "")
       .replace(/#{1,6}\s+/g, "")
       .replace(/\*\*(.+?)\*\*/gs, "$1")
@@ -292,6 +292,13 @@ PARISA MEMORY PORTAL এ আপনাকে স্বাগতম।
       .replace(/\n/g, " ")
       .replace(/\s+/g, " ")
       .trim();
+
+    // ── EN_BN dictionary: ইংরেজি শব্দ → বাংলা phonetic ─────────────
+    for (const [en, bn] of Object.entries(EN_BN)) {
+      const regex = new RegExp("\\b" + en + "\\b", "g");
+      text = text.replace(regex, bn);
+    }
+    return text;
   }
 
   // ── Browser TTS — chunk করে পুরো text পড়বে ─────────────────────
@@ -310,6 +317,71 @@ PARISA MEMORY PORTAL এ আপনাকে স্বাগতম।
     return chunks.filter(c => c.length > 1);
   }
 
+  // ── Emotion detection: টেক্সট বিশ্লেষণ করে rate/pitch ঠিক করা ──
+  function detectEmotion(text) {
+    const questionCount = (text.match(/\?|কি|কেন|কীভাবে|কোথায়|কখন|কার|কে /g) || []).length;
+    const exclamationCount = (text.match(/!/g) || []).length;
+    const sadWords = (text.match(/দুঃখ|কষ্ট|বিষণ্ণ|মন খারাপ|কাঁদ|কান্না/g) || []).length;
+    const happyWords = (text.match(/আনন্দ|খুশি|ভালো|দারুণ|অসাধারণ|মজা/g) || []).length;
+
+    if (exclamationCount >= 2 || happyWords >= 2) {
+      return { rate: "+10%", pitch: "+2Hz" };   // উত্তেজিত / আনন্দিত
+    } else if (questionCount >= 2) {
+      return { rate: "+0%", pitch: "+5Hz" };    // প্রশ্নবোধক — pitch উঁচু
+    } else if (sadWords >= 1) {
+      return { rate: "-10%", pitch: "-3Hz" };   // দুঃখী — ধীর ও নিচু
+    } else {
+      return { rate: "+0%", pitch: "+0Hz" };    // স্বাভাবিক
+    }
+  }
+
+  // ── Edge TTS API call (server-side) ──────────────────────────────
+  // ── Edge TTS: বড় text chunk করে পাঠানো ─────────────────────────
+  function splitTextForEdge(text) {
+    // দাড়ি/!/? দিয়ে ভাগ করো, প্রতিটা chunk ≤ 900 অক্ষর
+    const parts = text.split(/(?<=[।!?])\s*/);
+    const chunks = [];
+    let cur = "";
+    for (const p of parts) {
+      if ((cur + p).length > 900) {
+        if (cur.trim()) chunks.push(cur.trim());
+        cur = p;
+      } else { cur += p + " "; }
+    }
+    if (cur.trim()) chunks.push(cur.trim());
+    return chunks.filter(c => c.length > 1);
+  }
+
+  async function fetchEdgeTTS(text, gender) {
+    try {
+      const res = await fetch("/voice", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ text, gender }),
+      });
+      if (!res.ok || res.status === 204) return null;
+      const blob = await res.blob();
+      return URL.createObjectURL(blob);
+    } catch { return null; }
+  }
+
+  // chunk-এ ভাগ করে একে একে Edge TTS audio play করে
+  async function playEdgeChunks(chunks, gender, onDone, setAudioRef) {
+    for (let i = 0; i < chunks.length; i++) {
+      const url = await fetchEdgeTTS(chunks[i], gender);
+      if (!url) continue;
+      await new Promise(resolve => {
+        const audio = new Audio(url);
+        if (setAudioRef) setAudioRef(audio);
+        audio.onended = () => { URL.revokeObjectURL(url); resolve(); };
+        audio.onerror = () => { URL.revokeObjectURL(url); resolve(); };
+        audio.play().catch(resolve);
+      });
+    }
+    if (onDone) onDone();
+  }
+
+  // ── Fallback: browser TTS (যদি Edge TTS কাজ না করে) ─────────────
   function _doSpeak(chunks, voice, rate, idx, onDone) {
     if (idx >= chunks.length) { currentUtter = null; if (onDone) onDone(); return; }
     const u = new SpeechSynthesisUtterance(chunks[idx]);
@@ -321,52 +393,128 @@ PARISA MEMORY PORTAL এ আপনাকে স্বাগতম।
     speechSynthesis.speak(u);
   }
 
+  // ── speak(): যেকোনো বড় text পুরোটা পড়বে (chunk করে Edge TTS) ───
   function speak(text, btn = null) {
     if (!text || !text.trim()) return;
-    if (currentAudio) { currentAudio.pause(); currentAudio = null; }
+    if (currentAudio) { currentAudio.pause(); currentAudio.src = ""; currentAudio = null; }
     if (currentUtter) { speechSynthesis.cancel(); currentUtter = null; }
     if (btn) btn.innerHTML = `<span class="tts-dots"><span></span><span></span><span></span></span>`;
 
-    const chunks = splitToChunks(stripForTTS(text));
-    if (!chunks.length) {
+    const cleaned = stripForTTS(text);
+    if (!cleaned.trim()) {
       if (btn) btn.innerHTML = `<svg class="ic"><use href="#i-volume"/></svg> ভয়েস`;
       return;
     }
     const gender = settings.voiceGender || "female";
-    const rate   = gender === "male" ? 0.87 : 0.89;
+    const edgeChunks = splitTextForEdge(cleaned);
 
-    const run = () => {
-      const voice = getBanglaVoice(gender);
-      if (btn) btn.innerHTML = `<svg class="ic"><use href="#i-volume"/></svg> চলছে`;
-      _doSpeak(chunks, voice, rate, 0, () => {
-        if (btn) btn.innerHTML = `<svg class="ic"><use href="#i-volume"/></svg> ভয়েস`;
-      });
-    };
-    if (speechSynthesis.getVoices().length) run();
-    else speechSynthesis.onvoiceschanged = run;
+    if (btn) btn.innerHTML = `<svg class="ic"><use href="#i-volume"/></svg> চলছে`;
+
+    // প্রথম chunk দিয়ে Edge TTS test করি — কাজ করলে বাকিটাও Edge TTS-এ পড়ব
+    fetchEdgeTTS(edgeChunks[0], gender).then(firstUrl => {
+      if (firstUrl) {
+        // ✅ Edge TTS কাজ করছে — পুরো text chunk করে পড়ব
+        const playAll = async () => {
+          // প্রথম chunk (আগেই fetch করা)
+          await new Promise(resolve => {
+            const audio = new Audio(firstUrl);
+            currentAudio = audio;
+            audio.onended = () => { URL.revokeObjectURL(firstUrl); resolve(); };
+            audio.onerror = () => { URL.revokeObjectURL(firstUrl); resolve(); };
+            audio.play().catch(resolve);
+          });
+          // বাকি chunks
+          for (let i = 1; i < edgeChunks.length; i++) {
+            const url = await fetchEdgeTTS(edgeChunks[i], gender);
+            if (!url) continue;
+            await new Promise(resolve => {
+              const audio = new Audio(url);
+              currentAudio = audio;
+              audio.onended = () => { URL.revokeObjectURL(url); resolve(); };
+              audio.onerror = () => { URL.revokeObjectURL(url); resolve(); };
+              audio.play().catch(resolve);
+            });
+          }
+          currentAudio = null;
+          if (btn) btn.innerHTML = `<svg class="ic"><use href="#i-volume"/></svg> ভয়েস`;
+        };
+        playAll();
+      } else {
+        // ⚠️ Edge TTS ব্যর্থ — browser fallback
+        const chunks = splitToChunks(cleaned);
+        if (!chunks.length) {
+          if (btn) btn.innerHTML = `<svg class="ic"><use href="#i-volume"/></svg> ভয়েস`;
+          return;
+        }
+        const rate = gender === "male" ? 0.87 : 0.89;
+        const run = () => {
+          const voice = getBanglaVoice(gender);
+          _doSpeak(chunks, voice, rate, 0, () => {
+            if (btn) btn.innerHTML = `<svg class="ic"><use href="#i-volume"/></svg> ভয়েস`;
+          });
+        };
+        if (speechSynthesis.getVoices().length) run();
+        else speechSynthesis.onvoiceschanged = run;
+      }
+    });
   }
 
+  // ── speakAndWait(): বড় text পুরোটা পড়বে, শেষ হলে resolve ────────
   function speakAndWait(text, statusEl = null) {
     return new Promise(resolve => {
       if (!text || !text.trim()) return resolve();
-      if (currentAudio) { currentAudio.pause(); currentAudio = null; }
+      if (currentAudio) { currentAudio.pause(); currentAudio.src = ""; currentAudio = null; }
       if (currentUtter) { speechSynthesis.cancel(); currentUtter = null; }
       if (statusEl) statusEl.innerHTML = `বলছি… <span class="tts-dots"><span></span><span></span><span></span></span>`;
 
-      const chunks = splitToChunks(stripForTTS(text));
-      if (!chunks.length) return resolve();
+      const cleaned = stripForTTS(text);
+      if (!cleaned.trim()) return resolve();
       const gender = settings.voiceGender || "female";
-      const rate   = gender === "male" ? 0.87 : 0.89;
+      const edgeChunks = splitTextForEdge(cleaned);
 
-      const run = () => {
-        const voice = getBanglaVoice(gender);
-        _doSpeak(chunks, voice, rate, 0, () => {
-          if (statusEl) statusEl.textContent = "";
-          resolve();
-        });
-      };
-      if (speechSynthesis.getVoices().length) run();
-      else speechSynthesis.onvoiceschanged = run;
+      fetchEdgeTTS(edgeChunks[0], gender).then(firstUrl => {
+        if (firstUrl) {
+          // ✅ Edge TTS কাজ করছে — সব chunk পড়ব
+          const playAll = async () => {
+            await new Promise(r => {
+              const audio = new Audio(firstUrl);
+              currentAudio = audio;
+              audio.onended = () => { URL.revokeObjectURL(firstUrl); r(); };
+              audio.onerror = () => { URL.revokeObjectURL(firstUrl); r(); };
+              audio.play().catch(r);
+            });
+            for (let i = 1; i < edgeChunks.length; i++) {
+              const url = await fetchEdgeTTS(edgeChunks[i], gender);
+              if (!url) continue;
+              await new Promise(r => {
+                const audio = new Audio(url);
+                currentAudio = audio;
+                audio.onended = () => { URL.revokeObjectURL(url); r(); };
+                audio.onerror = () => { URL.revokeObjectURL(url); r(); };
+                audio.play().catch(r);
+              });
+            }
+            currentAudio = null;
+            if (statusEl) statusEl.textContent = "";
+            resolve();
+          };
+          playAll();
+        } else {
+          // ⚠️ Edge TTS ব্যর্থ — browser fallback
+          const chunks = splitToChunks(cleaned);
+          if (!chunks.length) { if (statusEl) statusEl.textContent = ""; return resolve(); }
+          const rate = gender === "male" ? 0.87 : 0.89;
+          const run = () => {
+            const voice = getBanglaVoice(gender);
+            _doSpeak(chunks, voice, rate, 0, () => {
+              if (statusEl) statusEl.textContent = "";
+              resolve();
+            });
+          };
+          if (speechSynthesis.getVoices().length) run();
+          else speechSynthesis.onvoiceschanged = run;
+        }
+      });
     });
   }
 
