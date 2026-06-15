@@ -94,20 +94,6 @@ async function callWithFailover(pool, attempt) {
   throw lastErr || new Error(`${pool.name}: all failed`);
 }
 
-// ─── Reply Cleaner ───────────────────────────────────────────────
-function cleanReply(text) {
-  if (!text) return text;
-  return text
-    .replace(/\*\*([^*]+)\*\*/g, "$1")
-    .replace(/\*([^*]+)\*/g, "$1")
-    .replace(/^#{1,6}\s+/gm, "")
-    .replace(/^[\*\-•]\s+/gm, "")
-    .replace(/^\d+\.\s+/gm, "")
-    .replace(/[\u{1F000}-\u{1FFFF}\u{2600}-\u{27BF}]/gu, "")
-    .replace(/\n{3,}/g, "\n\n")
-    .trim();
-}
-
 // ─── Chat History Database ────────────────────────────────────────
 import { readFileSync, existsSync } from "fs";
 
@@ -353,12 +339,6 @@ async function refreshDriveMemory() {
 
 refreshDriveMemory().catch(() => {});
 
-// ── প্রতি ৩০ মিনিটে Drive auto-refresh ──
-setInterval(() => {
-  console.log("\U0001F504 Drive auto-refresh...");
-  refreshDriveMemory().catch(e => console.warn("Auto-refresh:", e.message));
-}, 30 * 60 * 1000);
-
 // ─── রুবেলের জীবনের পূর্ণ ইতিহাস (AI এর স্থায়ী স্মৃতি) ──────────
 const RUBEL_HISTORY = `
 === রুবেল ও পারিসার সম্পর্কের সম্পূর্ণ ইতিহাস ===
@@ -473,7 +453,7 @@ function buildSystemPrompt(userName = "আপনি", userQuery = "") {
 
   const screenshotList = driveFileList
     .filter(f => f.category === "screenshot")
-    .map(f => `- ${f.name}: https://drive.google.com/file/d/${f.id}/view`)
+    .map(f => `- ${f.name} [ID:${f.id}]`)
     .slice(0, 50)
     .join("\n");
 
@@ -487,6 +467,7 @@ function buildSystemPrompt(userName = "আপনি", userQuery = "") {
 
 তোমাকে তৈরি করেছেন রুবেল (দাদা/কালাচাঁন)।
 ব্যবহারকারীর নাম: ${userName}
+${userName === "আপনি" ? '(নাম জানা নেই — তাই "আপনি" সম্বোধন করো, "দাদা" বলো না, একজন সাধারণ ভদ্র সহকারীর মতো কথা বলো)' : `(এই ব্যক্তি নিজেকে "${userName}" নামে পরিচয় দিয়েছে — এই নামেই ডাকবে)`}
 
 তোমার কাজ:
 - রুবেল ও পারিসার সম্পর্কের সত্য ইতিহাস বিশ্লেষণ করে উত্তর দেওয়া
@@ -499,7 +480,7 @@ function buildSystemPrompt(userName = "আপনি", userQuery = "") {
 - সর্বদা পরিষ্কার বাংলায় উত্তর দেবে
 - প্রমাণ না থাকলে স্পষ্ট বলবে
 - ব্যবহারকারীকে সম্মানের সাথে ভালোবাসার সাথে কথা বলবে
-- কেউ প্রথমবার "Hi", "Hello", "হ্যালো" বা এই রকম শুভেচ্ছা বার্তা দিলে — প্রথমে "আসসালামু ওয়ালাইকুম" বলবে, তারপর সংক্ষেপে নিজের পরিচয় দেবে (আমি PARISA Memory Portal-এর অফিশিয়াল AI সহকারী, এই পোর্টালের সম্পর্ক/ইতিহাস/আইনি বিশ্লেষণ নিয়ে সাহায্য করতে পারি), এবং সবশেষে জিজ্ঞাসা করবে কীভাবে সাহায্য করতে পারে। কাউকে "দাদা" বা অন্য কোনো ব্যক্তিগত নামে সম্বোধন করবে না — সবার সাথে একই নিরপেক্ষ ভদ্র টোনে কথা বলবে
+- কেউ "Hi", "Hello", "হ্যালো" বললে "ওয়ালাইকুম সালাম" বলবে না — স্বাভাবিক বাংলায় সাড়া দেবে যেমন "হ্যাঁ, বলুন!" বা "কেমন আছেন?" (ব্যবহারকারীর নাম অনুযায়ী সম্বোধন করবে)
 - কখনো ফাইলের নাম যেমন "history-context-2.txt", "My Wife...😘😘" ইত্যাদি উল্লেখ করবে না — এগুলো অভ্যন্তরীণ
 - কখনো "রেফারেন্স:", "খণ্ড ২", "টাইমলাইনে উল্লেখ আছে" এই ধরনের technical কথা বলবে না
 - সরাসরি স্বাভাবিকভাবে উত্তর দেবে যেন তুমি সব মনে রাখো
@@ -535,11 +516,13 @@ ${screenshotList || "স্ক্রিনশট লোড হচ্ছে..."}
 --- কল রেকর্ড তালিকা ---
 ${callList || "কল রেকর্ড লোড হচ্ছে..."}
 
---- ছবি দেখানোর নিয়ম ---
-যখন কোনো স্ক্রিনশট বা ছবি দেখাতে হবে, এই exact format ব্যবহার করো:
-[IMAGE:FILE_ID_HERE]
+--- ছবি দেখানোর নিয়ম (অবশ্যই মানতে হবে) ---
+যখন স্ক্রিনশট বা ছবি দেখাতে হবে, শুধু এই format লিখবে:
+[IMAGE:FILE_ID]
 উদাহরণ: [IMAGE:1Ev_27tCZbH8xU3eZ1RMEf-UgjMMtz3gr]
-ফাইল ID হলো Drive link-এর /d/ এর পরের অংশ।`;
+
+কখনোই "https://drive.google.com/..." লিংক টেক্সটে লিখবে না — এটা কড়াভাবে নিষিদ্ধ।
+শুধু [IMAGE:xxxx] ব্যবহার করো, ছবি নিজেই দেখা যাবে। আলাদা link দেওয়ার দরকার নেই।`;
 }
 
 // ─── AI Providers ─────────────────────────────────────────────────
@@ -663,7 +646,37 @@ async function logFirebase(data) {
 }
 
 // ─── Edge TTS ─────────────────────────────────────────────────────
+// সাধারণ ইংরেজি শব্দ যেগুলো বাংলা TTS বানান করে পড়ে — phonetic বাংলায় রূপান্তর
+const ENGLISH_TO_BANGLA = {
+  "whatsapp": "হোয়াটসঅ্যাপ", "WhatsApp": "হোয়াটসঅ্যাপ",
+  "facebook": "ফেসবুক", "Facebook": "ফেসবুক",
+  "messenger": "মেসেঞ্জার", "Messenger": "মেসেঞ্জার",
+  "telegram": "টেলিগ্রাম", "Telegram": "টেলিগ্রাম",
+  "google": "গুগল", "Google": "গুগল",
+  "drive": "ড্রাইভ", "Drive": "ড্রাইভ",
+  "screenshot": "স্ক্রিনশট", "Screenshot": "স্ক্রিনশট",
+  "chat": "চ্যাট", "Chat": "চ্যাট",
+  "video": "ভিডিও", "Video": "ভিডিও",
+  "call": "কল", "Call": "কল",
+  "online": "অনলাইন", "Online": "অনলাইন",
+  "offline": "অফলাইন",
+  "phone": "ফোন", "Phone": "ফোন",
+  "voice": "ভয়েস", "Voice": "ভয়েস",
+  "AI": "এআই", "ai": "এআই",
+  "app": "অ্যাপ", "App": "অ্যাপ",
+  "OK": "ওকে", "ok": "ওকে",
+  "sorry": "সরি", "Sorry": "সরি",
+  "yes": "ইয়েস", "no": "নো",
+  "love": "লাভ", "Love": "লাভ",
+  "PARISA": "পারিসা", "Parisa": "পারিসা",
+  "GP": "জিপি",
+};
+
 function cleanTextForTTS(text) {
+  // ইংরেজি শব্দ বাংলা phonetic-এ replace করো
+  for (const [en, bn] of Object.entries(ENGLISH_TO_BANGLA)) {
+    text = text.replace(new RegExp(`\\b${en}\\b`, "g"), bn);
+  }
   return text
     // markdown/symbols সরাও
     .replace(/\*\*|__|\*|_|`|~~|#+\s/g, "")
@@ -712,17 +725,7 @@ async function synthesizeEdgeTTS(text, gender = "female") {
       });
     });
     return chunks.length ? Buffer.concat(chunks) : null;
-  } catch (e) {
-    console.warn("edge-tts:", e?.message || e);
-    // Edge TTS ব্যর্থ হলে Google TTS fallback
-    try {
-      const encoded = encodeURIComponent(text.slice(0, 200));
-      const url = `https://translate.google.com/translate_tts?ie=UTF-8&q=${encoded}&tl=bn&client=tw-ob`;
-      const r = await fetch(url, { headers: { "User-Agent": "Mozilla/5.0" } });
-      if (r.ok) return Buffer.from(await r.arrayBuffer());
-    } catch(fe) { console.warn("gTTS fallback failed:", fe.message); }
-    return null;
-  }
+  } catch (e) { console.warn("edge-tts:", e.message); return null; }
 }
 
 // ─── Routes ───────────────────────────────────────────────────────
@@ -764,14 +767,9 @@ function mount(prefix) {
   // ── Chat ──────────────────────────────────────────────────────────
   app.post(prefix + "/chat", async (req, res) => {
     try {
-      const { messages = [], userName = "আপনি", image } = req.body || {};
+      let { messages = [], userName = "আপনি", image } = req.body || {};
+      if (!userName || !userName.trim()) userName = "আপনি";
       refreshDriveMemory().catch(() => {});
-
-// ── প্রতি ৩০ মিনিটে Drive auto-refresh ──
-setInterval(() => {
-  console.log("\U0001F504 Drive auto-refresh...");
-  refreshDriveMemory().catch(e => console.warn("Auto-refresh:", e.message));
-}, 30 * 60 * 1000);
       const lastUserMsg2 = messages[messages.length - 1]?.text || "";
       const sys = buildSystemPrompt(userName, lastUserMsg2);
       const contents = [];
@@ -793,8 +791,7 @@ setInterval(() => {
         generationConfig: { temperature: 0.85, maxOutputTokens: 2048 },
       };
       const { reply, provider } = await chatWithFallback(body, !!image);
-      const rawReply = reply || "দুঃখিত, এই মুহূর্তে উত্তর দিতে পারছি না।";
-      const finalReply = cleanReply(rawReply);
+      const finalReply = reply || "দুঃখিত, এই মুহূর্তে উত্তর দিতে পারছি না।";
       logFirebase({ userName, userMessage: lastUserMsg2, aiReply: finalReply, provider, hasImage: !!image }).catch(() => {});
       const tgText = `👤 ${userName}: ${lastUserMsg2}\n\n🤖 PARISA: ${finalReply}`;
       image ? sendTelegram(tgText, image).catch(() => {}) : sendTelegram(tgText).catch(() => {});
@@ -808,7 +805,8 @@ setInterval(() => {
   // ── Analyze ───────────────────────────────────────────────────────
   app.post(prefix + "/analyze", async (req, res) => {
     try {
-      const { prompt = "এই ফাইলটা বিশ্লেষণ করে বাংলায় বল।", file, mime, userName = "আপনি" } = req.body || {};
+      let { prompt = "এই ফাইলটা বিশ্লেষণ করে বাংলায় বল।", file, mime, userName = "আপনি" } = req.body || {};
+      if (!userName || !userName.trim()) userName = "আপনি";
       if (!file) return res.status(400).json({ reply: "ফাইল পাইনি।" });
       const sys = buildSystemPrompt(userName);
       const b64 = String(file).split(",").pop();
@@ -834,7 +832,7 @@ setInterval(() => {
     try {
       const { text, gender = "female" } = req.body || {};
       if (!text) return res.status(204).end();
-      const audio = await synthesizeEdgeTTS(String(text).slice(0, 4000), gender);
+      const audio = await synthesizeEdgeTTS(String(text).slice(0, 8000), gender);
       if (!audio) return res.status(204).end();
       res.setHeader("Content-Type", "audio/mpeg");
       res.send(audio);
@@ -844,12 +842,6 @@ setInterval(() => {
   // ── Drive info ────────────────────────────────────────────────────
   app.get(prefix + "/drive", async (_req, res) => {
     await refreshDriveMemory().catch(() => {});
-
-// ── প্রতি ৩০ মিনিটে Drive auto-refresh ──
-setInterval(() => {
-  console.log("\U0001F504 Drive auto-refresh...");
-  refreshDriveMemory().catch(e => console.warn("Auto-refresh:", e.message));
-}, 30 * 60 * 1000);
     const cats = { chat: [], call: [], screenshot: [] };
     driveFileList.forEach(f => {
       if (cats[f.category]) cats[f.category].push({
@@ -873,12 +865,6 @@ setInterval(() => {
   app.post(prefix + "/drive/refresh", async (_req, res) => {
     driveLastFetch = 0;
     await refreshDriveMemory().catch(() => {});
-
-// ── প্রতি ৩০ মিনিটে Drive auto-refresh ──
-setInterval(() => {
-  console.log("\U0001F504 Drive auto-refresh...");
-  refreshDriveMemory().catch(e => console.warn("Auto-refresh:", e.message));
-}, 30 * 60 * 1000);
     res.json({ ok: true, files: driveFileList.length, memoryChars: driveMemoryText.length });
   });
 

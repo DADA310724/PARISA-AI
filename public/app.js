@@ -6,8 +6,8 @@
   const uid = () => Math.random().toString(36).slice(2, 10);
 
   // ── LocalStorage keys ────────────────────────────────────────────
-  const LS_SETTINGS = "parisa.settings.v2";
-  const LS_CHATS    = "parisa.chats.v1";
+  const LS_SETTINGS = "parisa.settings.v3";
+  const LS_CHATS    = "parisa.chats.v2";
   const LS_ACTIVE   = "parisa.active.v1";
   const LS_WELCOMED = "parisa.welcomed.v1";
 
@@ -123,15 +123,20 @@ PARISA MEMORY PORTAL এ আপনাকে স্বাগতম।
   }
 
   function renderMarkdown(text) {
-    text = text.replace(/\[IMAGE:([A-Za-z0-9_\-]+)\]/g,
-      '<img src="/image/$1" class="drive-img" alt="স্ক্রিনশট" loading="lazy" onerror="this.style.display=\'none\'">');
     try {
-      return DOMPurify.sanitize(
-        marked.parse(text, { breaks: true, gfm: true }),
-        { ADD_TAGS: ["img"], ADD_ATTR: ["src", "class", "alt", "loading", "onerror"] }
+      // Step 1: markdown parse
+      const html = marked.parse(text, { breaks: true, gfm: true });
+      // Step 2: DOMPurify
+      let clean = DOMPurify.sanitize(html, {
+        ADD_TAGS: ["img"], ADD_ATTR: ["src","class","loading","onerror"]
+      });
+      // Step 3: [IMAGE:id] → actual img (AFTER sanitize, so not stripped)
+      clean = clean.replace(/\[IMAGE:([\w\-]+)\]/g,
+        (_, id) => `<img src="${BASE}/image/${id}" class="drive-img" loading="lazy" onerror="this.style.display='none'" />`
       );
+      return clean;
     }
-    catch { return text.replace(/\n/g, "<br/>"); }
+    catch (e) { return text.replace(/\n/g, "<br/>"); }
   }
   function scrollToBottom() { messagesEl.scrollTop = messagesEl.scrollHeight; }
   function escapeHtml(s) {
@@ -208,8 +213,11 @@ PARISA MEMORY PORTAL এ আপনাকে স্বাগতম।
   $("#saveSettings").onclick = () => {
     const sel = document.querySelector('input[name="voiceGender"]:checked');
     settings.voiceGender = sel ? sel.value : "female";
-    settings.userName    = $("#userName").value.trim() || "দাদা";
+    const newName = $("#userName").value.trim();
+    settings.userName = newName.length > 0 ? newName : "";
     saveSettings();
+    const saved = JSON.parse(localStorage.getItem(LS_SETTINGS) || "{}");
+    console.log("Saved userName:", saved.userName);
     closeSettings();
   };
   $("#resetSettings").onclick = () => {
@@ -223,298 +231,52 @@ PARISA MEMORY PORTAL এ আপনাকে স্বাগতম।
     speak("আসসালামু ওয়ালাইকুম। আমি পারিসা, আপনাকে স্বাগতম।");
   };
 
-  // ── Voice: Browser TTS ───────────────────────────────────────────
+  // ── Voice: Microsoft Edge TTS ─────────────────────────────────────
   let currentAudio = null;
-  let currentUtter = null;
 
-  // English → বাংলা phonetic dictionary
-  const EN_BN = {
-    "WhatsApp":"হোয়াটসঅ্যাপ","Facebook":"ফেসবুক","Messenger":"মেসেঞ্জার",
-    "Telegram":"টেলিগ্রাম","Instagram":"ইনস্টাগ্রাম","YouTube":"ইউটিউব",
-    "Google":"গুগল","Android":"এন্ড্রয়েড","iPhone":"আইফোন","App":"অ্যাপ",
-    "OK":"ওকে","ok":"ওকে","Yes":"ইয়েস","No":"না","Hi":"হাই","Hello":"হ্যালো",
-    "Drive":"ড্রাইভ","Call":"কল","Video":"ভিডিও","Photo":"ফটো","File":"ফাইল",
-    "Screenshot":"স্ক্রিনশট","Password":"পাসওয়ার্ড","Email":"ইমেইল",
-    "Mobile":"মোবাইল","Phone":"ফোন","Number":"নম্বর","ID":"আইডি",
-    "PIN":"পিন","SIM":"সিম","WiFi":"ওয়াইফাই","Bluetooth":"ব্লুটুথ",
-    "RAM":"র‍্যাম","GB":"জিবি","MB":"এমবি","KB":"কেবি",
-    "January":"জানুয়ারি","February":"ফেব্রুয়ারি","March":"মার্চ",
-    "April":"এপ্রিল","May":"মে","June":"জুন","July":"জুলাই",
-    "August":"আগস্ট","September":"সেপ্টেম্বর","October":"অক্টোবর",
-    "November":"নভেম্বর","December":"ডিসেম্বর",
-    "Jan":"জানুয়ারি","Feb":"ফেব্রুয়ারি","Mar":"মার্চ","Apr":"এপ্রিল",
-    "Jun":"জুন","Jul":"জুলাই","Aug":"আগস্ট","Sep":"সেপ্টেম্বর",
-    "Oct":"অক্টোবর","Nov":"নভেম্বর","Dec":"ডিসেম্বর",
-    "AI":"এআই","API":"এপিআই","URL":"ইউআরএল","PDF":"পিডিএফ",
-    "SMS":"এসএমএস","OTP":"ওটিপি","TTS":"টিটিএস",
-  };
-
-  function getBanglaVoice(gender = "female") {
-    const voices = speechSynthesis.getVoices();
-    const preferred = gender === "male"
-      ? ["Pradeep","bn-BD-PradeepNeural","Microsoft Pradeep"]
-      : ["Nabanita","bn-BD-NabanitaNeural","Microsoft Nabanita"];
-    for (const name of preferred) {
-      const v = voices.find(v => v.name.includes(name));
-      if (v) return v;
-    }
-    return voices.find(v => v.lang && v.lang.startsWith("bn")) || null;
-  }
-
-  function stripEmoji(str) {
-    return str
-      .replace(/[\u{1F600}-\u{1F64F}]/gu, "")
-      .replace(/[\u{1F300}-\u{1F5FF}]/gu, "")
-      .replace(/[\u{1F680}-\u{1F6FF}]/gu, "")
-      .replace(/[\u{1F900}-\u{1F9FF}]/gu, "")
-      .replace(/[\u{1FA00}-\u{1FAFF}]/gu, "")
-      .replace(/[\u{2600}-\u{26FF}]/gu, "")
-      .replace(/[\u{2700}-\u{27BF}]/gu, "")
-      .replace(/[\u{FE00}-\u{FE0F}]/gu, "")
-      .replace(/\s+/g, " ").trim();
-  }
-
-  function stripForTTS(str) {
-    let text = stripEmoji(str)
-      .replace(/\[IMAGE:[^\]]*\]/g, "")
-      .replace(/#{1,6}\s+/g, "")
-      .replace(/\*\*(.+?)\*\*/gs, "$1")
-      .replace(/\*(.+?)\*/gs, "$1")
-      .replace(/__(.+?)__/gs, "$1")
-      .replace(/_(.+?)_/gs, "$1")
-      .replace(/`{1,3}[^`]*`{1,3}/g, "")
-      .replace(/^[-*•]\s+/gm, "")
-      .replace(/^\d+\.\s+/gm, "")
-      .replace(/^>\s*/gm, "")
-      .replace(/---+/g, "")
-      .replace(/\[([^\]]+)\]\([^)]+\)/g, "$1")
-      .replace(/\n{2,}/g, "। ")
-      .replace(/\n/g, " ")
-      .replace(/\s+/g, " ")
-      .trim();
-
-    // ── EN_BN dictionary: ইংরেজি শব্দ → বাংলা phonetic ─────────────
-    for (const [en, bn] of Object.entries(EN_BN)) {
-      const regex = new RegExp("\\b" + en + "\\b", "g");
-      text = text.replace(regex, bn);
-    }
-    return text;
-  }
-
-  // ── Browser TTS — chunk করে পুরো text পড়বে ─────────────────────
-  function splitToChunks(text) {
-    const chunks = [];
-    // দাড়ি, !, ? দিয়ে ভাগ করো
-    const parts = text.split(/(?<=[।!?])\s*/);
-    let cur = "";
-    for (const p of parts) {
-      if ((cur + p).length > 200) {
-        if (cur.trim()) chunks.push(cur.trim());
-        cur = p;
-      } else { cur += p + " "; }
-    }
-    if (cur.trim()) chunks.push(cur.trim());
-    return chunks.filter(c => c.length > 1);
-  }
-
-  // ── Emotion detection: টেক্সট বিশ্লেষণ করে rate/pitch ঠিক করা ──
-  function detectEmotion(text) {
-    const questionCount = (text.match(/\?|কি|কেন|কীভাবে|কোথায়|কখন|কার|কে /g) || []).length;
-    const exclamationCount = (text.match(/!/g) || []).length;
-    const sadWords = (text.match(/দুঃখ|কষ্ট|বিষণ্ণ|মন খারাপ|কাঁদ|কান্না/g) || []).length;
-    const happyWords = (text.match(/আনন্দ|খুশি|ভালো|দারুণ|অসাধারণ|মজা/g) || []).length;
-
-    if (exclamationCount >= 2 || happyWords >= 2) {
-      return { rate: "+10%", pitch: "+2Hz" };   // উত্তেজিত / আনন্দিত
-    } else if (questionCount >= 2) {
-      return { rate: "+0%", pitch: "+5Hz" };    // প্রশ্নবোধক — pitch উঁচু
-    } else if (sadWords >= 1) {
-      return { rate: "-10%", pitch: "-3Hz" };   // দুঃখী — ধীর ও নিচু
-    } else {
-      return { rate: "+0%", pitch: "+0Hz" };    // স্বাভাবিক
-    }
-  }
-
-  // ── Edge TTS API call (server-side) ──────────────────────────────
-  // ── Edge TTS: বড় text chunk করে পাঠানো ─────────────────────────
-  function splitTextForEdge(text) {
-    // দাড়ি/!/? দিয়ে ভাগ করো, প্রতিটা chunk ≤ 900 অক্ষর
-    const parts = text.split(/(?<=[।!?])\s*/);
-    const chunks = [];
-    let cur = "";
-    for (const p of parts) {
-      if ((cur + p).length > 900) {
-        if (cur.trim()) chunks.push(cur.trim());
-        cur = p;
-      } else { cur += p + " "; }
-    }
-    if (cur.trim()) chunks.push(cur.trim());
-    return chunks.filter(c => c.length > 1);
-  }
-
-  async function fetchEdgeTTS(text, gender) {
+  async function speak(text, btn = null) {
+    if (!text || !text.trim()) return;
+    if (currentAudio) { currentAudio.pause(); currentAudio = null; }
+    if (btn) btn.innerHTML = `<svg class="ic"><use href="#i-volume"/></svg> লোড…`;
     try {
-      const res = await fetch(api("/voice"), {
+      const r = await fetch(api("/voice"), {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ text, gender }),
+        body: JSON.stringify({ text: text.slice(0, 8000), gender: settings.voiceGender || "female" }),
       });
-      if (!res.ok || res.status === 204) return null;
-      const blob = await res.blob();
-      return URL.createObjectURL(blob);
-    } catch { return null; }
-  }
-
-  // chunk-এ ভাগ করে একে একে Edge TTS audio play করে
-  async function playEdgeChunks(chunks, gender, onDone, setAudioRef) {
-    for (let i = 0; i < chunks.length; i++) {
-      const url = await fetchEdgeTTS(chunks[i], gender);
-      if (!url) continue;
-      await new Promise(resolve => {
-        const audio = new Audio(url);
-        if (setAudioRef) setAudioRef(audio);
-        audio.onended = () => { URL.revokeObjectURL(url); resolve(); };
-        audio.onerror = () => { URL.revokeObjectURL(url); resolve(); };
-        audio.play().catch(resolve);
-      });
-    }
-    if (onDone) onDone();
-  }
-
-  // ── Fallback: browser TTS (যদি Edge TTS কাজ না করে) ─────────────
-  function _doSpeak(chunks, voice, rate, idx, onDone) {
-    if (idx >= chunks.length) { currentUtter = null; if (onDone) onDone(); return; }
-    const u = new SpeechSynthesisUtterance(chunks[idx]);
-    u.lang = "bn-BD"; u.rate = rate; u.pitch = 1.05;
-    if (voice) u.voice = voice;
-    u.onend = () => _doSpeak(chunks, voice, rate, idx + 1, onDone);
-    u.onerror = () => _doSpeak(chunks, voice, rate, idx + 1, onDone);
-    currentUtter = u;
-    speechSynthesis.speak(u);
-  }
-
-  // ── speak(): যেকোনো বড় text পুরোটা পড়বে (chunk করে Edge TTS) ───
-  function speak(text, btn = null) {
-    if (!text || !text.trim()) return;
-    if (currentAudio) { currentAudio.pause(); currentAudio.src = ""; currentAudio = null; }
-    if (currentUtter) { speechSynthesis.cancel(); currentUtter = null; }
-    if (btn) btn.innerHTML = `<span class="tts-dots"><span></span><span></span><span></span></span>`;
-
-    const cleaned = stripForTTS(text);
-    if (!cleaned.trim()) {
-      if (btn) btn.innerHTML = `<svg class="ic"><use href="#i-volume"/></svg> ভয়েস`;
-      return;
-    }
-    const gender = settings.voiceGender || "female";
-    const edgeChunks = splitTextForEdge(cleaned);
-
-    if (btn) btn.innerHTML = `<svg class="ic"><use href="#i-volume"/></svg> চলছে`;
-
-    // প্রথম chunk দিয়ে Edge TTS test করি — কাজ করলে বাকিটাও Edge TTS-এ পড়ব
-    fetchEdgeTTS(edgeChunks[0], gender).then(firstUrl => {
-      if (firstUrl) {
-        // ✅ Edge TTS কাজ করছে — পুরো text chunk করে পড়ব
-        const playAll = async () => {
-          // প্রথম chunk (আগেই fetch করা)
-          await new Promise(resolve => {
-            const audio = new Audio(firstUrl);
-            currentAudio = audio;
-            audio.onended = () => { URL.revokeObjectURL(firstUrl); resolve(); };
-            audio.onerror = () => { URL.revokeObjectURL(firstUrl); resolve(); };
-            audio.play().catch(resolve);
-          });
-          // বাকি chunks
-          for (let i = 1; i < edgeChunks.length; i++) {
-            const url = await fetchEdgeTTS(edgeChunks[i], gender);
-            if (!url) continue;
-            await new Promise(resolve => {
-              const audio = new Audio(url);
-              currentAudio = audio;
-              audio.onended = () => { URL.revokeObjectURL(url); resolve(); };
-              audio.onerror = () => { URL.revokeObjectURL(url); resolve(); };
-              audio.play().catch(resolve);
-            });
-          }
-          currentAudio = null;
-          if (btn) btn.innerHTML = `<svg class="ic"><use href="#i-volume"/></svg> ভয়েস`;
-        };
-        playAll();
-      } else {
-        // ⚠️ Edge TTS ব্যর্থ — browser fallback
-        const chunks = splitToChunks(cleaned);
-        if (!chunks.length) {
-          if (btn) btn.innerHTML = `<svg class="ic"><use href="#i-volume"/></svg> ভয়েস`;
-          return;
-        }
-        const rate = gender === "male" ? 0.87 : 0.89;
-        const run = () => {
-          const voice = getBanglaVoice(gender);
-          _doSpeak(chunks, voice, rate, 0, () => {
-            if (btn) btn.innerHTML = `<svg class="ic"><use href="#i-volume"/></svg> ভয়েস`;
-          });
-        };
-        if (speechSynthesis.getVoices().length) run();
-        else speechSynthesis.onvoiceschanged = run;
+      if (!r.ok || r.status === 204) {
+        if (btn) btn.innerHTML = `<svg class="ic"><use href="#i-volume"/></svg> ভয়েস`;
+        return;
       }
-    });
+      const blob = await r.blob();
+      currentAudio = new Audio(URL.createObjectURL(blob));
+      if (btn) {
+        btn.innerHTML = `<svg class="ic"><use href="#i-volume"/></svg> চলছে`;
+        currentAudio.onended = () => (btn.innerHTML = `<svg class="ic"><use href="#i-volume"/></svg> ভয়েস`);
+      }
+      await currentAudio.play();
+    } catch {
+      if (btn) btn.innerHTML = `<svg class="ic"><use href="#i-volume"/></svg> ভয়েস`;
+    }
   }
 
-  // ── speakAndWait(): বড় text পুরোটা পড়বে, শেষ হলে resolve ────────
-  function speakAndWait(text, statusEl = null) {
-    return new Promise(resolve => {
+  function speakAndWait(text) {
+    return new Promise(async (resolve) => {
       if (!text || !text.trim()) return resolve();
-      if (currentAudio) { currentAudio.pause(); currentAudio.src = ""; currentAudio = null; }
-      if (currentUtter) { speechSynthesis.cancel(); currentUtter = null; }
-      if (statusEl) statusEl.innerHTML = `বলছি… <span class="tts-dots"><span></span><span></span><span></span></span>`;
-
-      const cleaned = stripForTTS(text);
-      if (!cleaned.trim()) return resolve();
-      const gender = settings.voiceGender || "female";
-      const edgeChunks = splitTextForEdge(cleaned);
-
-      fetchEdgeTTS(edgeChunks[0], gender).then(firstUrl => {
-        if (firstUrl) {
-          // ✅ Edge TTS কাজ করছে — সব chunk পড়ব
-          const playAll = async () => {
-            await new Promise(r => {
-              const audio = new Audio(firstUrl);
-              currentAudio = audio;
-              audio.onended = () => { URL.revokeObjectURL(firstUrl); r(); };
-              audio.onerror = () => { URL.revokeObjectURL(firstUrl); r(); };
-              audio.play().catch(r);
-            });
-            for (let i = 1; i < edgeChunks.length; i++) {
-              const url = await fetchEdgeTTS(edgeChunks[i], gender);
-              if (!url) continue;
-              await new Promise(r => {
-                const audio = new Audio(url);
-                currentAudio = audio;
-                audio.onended = () => { URL.revokeObjectURL(url); r(); };
-                audio.onerror = () => { URL.revokeObjectURL(url); r(); };
-                audio.play().catch(r);
-              });
-            }
-            currentAudio = null;
-            if (statusEl) statusEl.textContent = "";
-            resolve();
-          };
-          playAll();
-        } else {
-          // ⚠️ Edge TTS ব্যর্থ — browser fallback
-          const chunks = splitToChunks(cleaned);
-          if (!chunks.length) { if (statusEl) statusEl.textContent = ""; return resolve(); }
-          const rate = gender === "male" ? 0.87 : 0.89;
-          const run = () => {
-            const voice = getBanglaVoice(gender);
-            _doSpeak(chunks, voice, rate, 0, () => {
-              if (statusEl) statusEl.textContent = "";
-              resolve();
-            });
-          };
-          if (speechSynthesis.getVoices().length) run();
-          else speechSynthesis.onvoiceschanged = run;
-        }
-      });
+      try {
+        if (currentAudio) { currentAudio.pause(); currentAudio = null; }
+        const r = await fetch(api("/voice"), {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ text: text.slice(0, 8000), gender: settings.voiceGender || "female" }),
+        });
+        if (!r.ok || r.status === 204) return resolve();
+        const blob = await r.blob();
+        currentAudio = new Audio(URL.createObjectURL(blob));
+        currentAudio.onended = () => resolve();
+        currentAudio.onerror = () => resolve();
+        await currentAudio.play();
+      } catch { resolve(); }
     });
   }
 
@@ -732,17 +494,32 @@ PARISA MEMORY PORTAL এ আপনাকে স্বাগতম।
   };
 
   // ── Audio call ─────────────────────────────────────────────────────
-  let callOn = false, callRecognizer = null;
+  let callOn = false, callRecognizer = null, callMuted = false;
   $("#audioCallBtn").onclick  = () => startAudioCall();
   $("#endAudioCall").onclick  = () => endAudioCall();
-  $("#muteAudioCall").onclick = () => { if (callRecognizer) callRecognizer.stop(); };
+  $("#muteAudioCall").onclick = () => {
+    callMuted = !callMuted;
+    $("#muteAudioCall").classList.toggle("muted", callMuted);
+    if (callMuted && callRecognizer) { try { callRecognizer.stop(); } catch {} }
+    else if (!callMuted && callOn) callLoop();
+  };
+
+  function setAvatarState(state) {
+    const circle = $("#avatarCircle");
+    const wave = $("#audioWave");
+    if (!circle || !wave) return;
+    circle.className = "avatar-circle " + state;
+    wave.className = "audio-wave " + state;
+    const status = { listening: "শুনছি…", talking: "বলছি…", thinking: "ভাবছি…" };
+    if (status[state]) $("#audioCallStatus").textContent = status[state];
+  }
 
   async function startAudioCall() {
     if (!SR) { alert("ব্রাউজার ভয়েস কল সাপোর্ট করে না।"); return; }
-    callOn = true;
+    callOn = true; callMuted = false;
     $("#audioCallView").hidden = false;
-    $("#audioCallStatus").textContent = "শুনছি…";
     $("#audioCallCaption").textContent = "";
+    setAvatarState("listening");
     callLoop();
   }
   function endAudioCall() {
@@ -752,7 +529,7 @@ PARISA MEMORY PORTAL এ আপনাকে স্বাগতম।
     $("#audioCallView").hidden = true;
   }
   function callLoop() {
-    if (!callOn) return;
+    if (!callOn || callMuted) return;
     callRecognizer = makeRecognizer();
     if (!callRecognizer) return;
     let finalText = "";
@@ -765,13 +542,14 @@ PARISA MEMORY PORTAL এ আপনাকে স্বাগতম।
       if (!callOn) return;
       const said = finalText.trim();
       if (!said) return setTimeout(callLoop, 200);
-      $("#audioCallStatus").textContent = "ভাবছি…";
+      setAvatarState("thinking");
       const reply = await callChat(said);
       if (!callOn) return;
+      setAvatarState("talking");
       $("#audioCallCaption").textContent = reply;
-      await speakAndWait(reply, $("#audioCallStatus"));
+      await speakAndWait(reply);
       if (!callOn) return;
-      $("#audioCallStatus").textContent = "শুনছি…";
+      setAvatarState("listening");
       callLoop();
     };
     callRecognizer.start();
@@ -793,11 +571,37 @@ PARISA MEMORY PORTAL এ আপনাকে স্বাগতম।
   }
 
   // ── Video call ─────────────────────────────────────────────────────
-  let vcStream = null, vcFacing = "user", vcOn = false, vcRecognizer = null;
+  let vcStream = null, vcFacing = "user", vcOn = false, vcRecognizer = null, vcMuted = false;
   $("#videoCallBtn").onclick   = () => startVideoCall();
   $("#endVideoCall").onclick   = () => endVideoCall();
   $("#flipVideoCall").onclick  = async () => { vcFacing = vcFacing === "user" ? "environment" : "user"; await openVcCam(); };
-  $("#muteVideoCall").onclick  = () => { if (vcRecognizer) vcRecognizer.stop(); };
+  $("#muteVideoCall").onclick  = () => {
+    vcMuted = !vcMuted;
+    $("#muteVideoCall").classList.toggle("muted", vcMuted);
+    if (vcMuted && vcRecognizer) { try { vcRecognizer.stop(); } catch {} }
+    else if (!vcMuted && vcOn) videoCallLoop();
+  };
+  $("#askVideoBtn").onclick = () => {
+    const img = snapshot($("#videoCallVideo"), $("#videoCallCanvas"));
+    setVcState("thinking");
+    fetch(api("/analyze"), {
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ prompt: "এই ভিডিওতে কী দেখছ? বাংলায় বিস্তারিত বল।", file: img, mime: "image/jpeg", userName: settings.userName })
+    }).then(r => r.json()).then(d => {
+      const reply = d.reply || "বুঝতে পারলাম না।";
+      $("#videoCallCaption").textContent = reply;
+      setVcState("talking");
+      speakAndWait(reply).then(() => setVcState("idle"));
+    }).catch(() => setVcState("idle"));
+  };
+
+  function setVcState(state) {
+    const wave = $("#vcAiWave");
+    if (!wave) return;
+    wave.className = "vc-ai-wave " + (state === "talking" ? "" : "idle");
+    const statuses = { talking: "বলছি…", thinking: "ভাবছি…", idle: "কানেক্টেড", listening: "শুনছি…" };
+    $("#videoCallStatus").textContent = statuses[state] || "কানেক্টেড";
+  }
 
   async function openVcCam() {
     try {
@@ -833,7 +637,7 @@ PARISA MEMORY PORTAL এ আপনাকে স্বাগতম।
       if (!vcOn) return;
       const said = finalText.trim();
       if (!said) return setTimeout(videoCallLoop, 200);
-      $("#videoCallStatus").textContent = "ভাবছি…";
+      setVcState("thinking");
       const img = snapshot($("#videoCallVideo"), $("#videoCallCanvas"));
       try {
         const r = await fetch(api("/analyze"), {
@@ -842,11 +646,12 @@ PARISA MEMORY PORTAL এ আপনাকে স্বাগতম।
         });
         const data = await r.json();
         const reply = data.reply || "কিছু বুঝতে পারলাম না।";
+        setVcState("talking");
         $("#videoCallCaption").textContent = reply;
-        await speakAndWait(reply, $("#videoCallStatus"));
+        await speakAndWait(reply);
       } catch { $("#videoCallCaption").textContent = "নেটওয়ার্ক সমস্যা"; }
       if (!vcOn) return;
-      $("#videoCallStatus").textContent = "কানেক্টেড";
+      setVcState("listening");
       videoCallLoop();
     };
     vcRecognizer.start();
@@ -856,6 +661,13 @@ PARISA MEMORY PORTAL এ আপনাকে স্বাগতম।
   function showWelcomeIfFirst() {
     if (localStorage.getItem(LS_WELCOMED)) return;
     localStorage.setItem(LS_WELCOMED, "1");
+    if (!getActive()) newChat();
+    const c = getActive();
+    const welcomeMsg = { role: "assistant", text: WELCOME_TEXT };
+    c.messages.push(welcomeMsg);
+    c.updatedAt = Date.now();
+    persistChats();
+    renderChat();
     // Auto-play short intro after 1.5s
     setTimeout(() => speak("আসসালামু ওয়ালাইকুম। পারিসা মেমোরি পোর্টালে আপনাকে স্বাগতম।"), 1500);
   }

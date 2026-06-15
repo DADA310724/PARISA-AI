@@ -1,0 +1,20 @@
+[33m4db7bfa[m[33m ([m[1;36mHEAD[m[33m -> [m[1;32mmain[m[33m, [m[1;31morigin/main[m[33m, [m[1;31morigin/HEAD[m[33m)[m Fix: Edge TTS error fallback to Google TTS
+[33m64902ab[m Fix: /voice API URL correction for BASE_PATH
+[33m70dcd82[m Fix: Edge TTS chunking + EN_BN dictionary + full text voice
+[33m9a2d931[m fix: AI persona neutral assistant tone, dada sambodhon baad
+[33m3fc3a26[m fix: audioCallView CSS override hodai welcome page hide hoye jacche, hidden attribute respect korar fix
+[33ma1af13f[m fix: bump service worker cache version to force app.js refresh
+[33mb226914[m fix: service worker cache version bump
+[33m2cf5059[m fix: home page khola, welcome message skip thik kora holo
+[33mc81254e[m Revert "fix: home page khola, welcome message skip thik kora holo"
+[33m4383392[m fix: home page khola, welcome message skip thik kora holo
+[33m3c874c5[m fix: voice+font+userName+cleanReply+autorefresh
+[33m4914c40[m Fix: bitrate 96 to 48 to match working voice version
+[33m90572c2[m Fix: bump service worker cache version
+[33me5c2b75[m Fix: SSML gentle voice
+[33m73074f0[m Remove test files
+[33m75cdbcf[m Fix: eye blink, avatar center
+[33mb40f8bc[m feat: Drive auto-refresh 30min
+[33mf1e082d[m fix: Noto Sans Bengali font first
+[33m2678821[m fix: font + text format + voice
+[33m0052308[m Published your App
