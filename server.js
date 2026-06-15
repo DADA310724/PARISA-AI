@@ -679,16 +679,8 @@ async function synthesizeEdgeTTS(text, gender = "female") {
   const voiceName = gender === "male" ? "bn-BD-PradeepNeural" : "bn-BD-NabanitaNeural";
   try {
     const tts = new MsEdgeTTS();
-    await tts.setMetadata(voiceName, OUTPUT_FORMAT.AUDIO_24KHZ_96KBITRATE_MONO_MP3);
-    // SSML দিয়ে natural/emotional voice
-    const ssml = `<speak version="1.0" xmlns="http://www.w3.org/2001/10/synthesis" xmlns:mstts="https://www.w3.org/2001/mstts" xml:lang="bn-BD">
-  <voice name="${voiceName}">
-    <mstts:express-as style="gentle">
-      <prosody rate="+5%" pitch="+0Hz">${text.replace(/[<>&"]/g, c => ({'<':'&lt;','>':'&gt;','&':'&amp;','"':'&quot;'}[c]))}</prosody>
-    </mstts:express-as>
-  </voice>
-</speak>`;
-    const { audioStream } = tts.toStream(ssml, true);
+    await tts.setMetadata(voiceName, OUTPUT_FORMAT.AUDIO_24KHZ_48KBITRATE_MONO_MP3);
+    const { audioStream } = tts.toStream(text);
     const chunks = [];
     await new Promise((resolve, reject) => {
       audioStream.on("data", (d) => chunks.push(d));
