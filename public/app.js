@@ -6,8 +6,8 @@
   const uid = () => Math.random().toString(36).slice(2, 10);
 
   // ── LocalStorage keys ────────────────────────────────────────────
-  const LS_SETTINGS = "parisa.settings.v3";
-  const LS_CHATS    = "parisa.chats.v2";
+  const LS_SETTINGS = "parisa.settings.v2";
+  const LS_CHATS    = "parisa.chats.v1";
   const LS_ACTIVE   = "parisa.active.v1";
   const LS_WELCOMED = "parisa.welcomed.v1";
 
@@ -123,20 +123,15 @@ PARISA MEMORY PORTAL এ আপনাকে স্বাগতম।
   }
 
   function renderMarkdown(text) {
+    text = text.replace(/\[IMAGE:([A-Za-z0-9_\-]+)\]/g,
+      '<img src="/image/$1" class="drive-img" alt="স্ক্রিনশট" loading="lazy" onerror="this.style.display=\'none\'">');
     try {
-      // Step 1: markdown parse
-      const html = marked.parse(text, { breaks: true, gfm: true });
-      // Step 2: DOMPurify
-      let clean = DOMPurify.sanitize(html, {
-        ADD_TAGS: ["img"], ADD_ATTR: ["src","class","loading","onerror"]
-      });
-      // Step 3: [IMAGE:id] → actual img (AFTER sanitize, so not stripped)
-      clean = clean.replace(/\[IMAGE:([\w\-]+)\]/g,
-        (_, id) => `<img src="${BASE}/image/${id}" class="drive-img" loading="lazy" onerror="this.style.display='none'" />`
+      return DOMPurify.sanitize(
+        marked.parse(text, { breaks: true, gfm: true }),
+        { ADD_TAGS: ["img"], ADD_ATTR: ["src", "class", "alt", "loading", "onerror"] }
       );
-      return clean;
     }
-    catch (e) { return text.replace(/\n/g, "<br/>"); }
+    catch { return text.replace(/\n/g, "<br/>"); }
   }
   function scrollToBottom() { messagesEl.scrollTop = messagesEl.scrollHeight; }
   function escapeHtml(s) {
@@ -213,11 +208,8 @@ PARISA MEMORY PORTAL এ আপনাকে স্বাগতম।
   $("#saveSettings").onclick = () => {
     const sel = document.querySelector('input[name="voiceGender"]:checked');
     settings.voiceGender = sel ? sel.value : "female";
-    const newName = $("#userName").value.trim();
-    settings.userName = newName.length > 0 ? newName : "";
+    settings.userName    = $("#userName").value.trim() || "দাদা";
     saveSettings();
-    const saved = JSON.parse(localStorage.getItem(LS_SETTINGS) || "{}");
-    console.log("Saved userName:", saved.userName);
     closeSettings();
   };
   $("#resetSettings").onclick = () => {
@@ -231,50 +223,91 @@ PARISA MEMORY PORTAL এ আপনাকে স্বাগতম।
     speak("আসসালামু ওয়ালাইকুম। আমি পারিসা, আপনাকে স্বাগতম।");
   };
 
-  // ── Voice: Microsoft Edge TTS ─────────────────────────────────────
+  // ── Voice: Microsoft Edge TTS (server-side) ─────────────────────
   let currentAudio = null;
+  let currentUtter = null;
+
+  // Text পরিষ্কার করো — TTS-এর আগে
+  function stripForTTS(str) {
+    if (!str) return "";
+    // ইমোজি বাদ
+    str = str.replace(/[\u{1F000}-\u{1FFFF}\u{2600}-\u{27BF}\u{FE00}-\u{FE0F}]/gu, "");
+    // markdown বাদ
+    str = str
+      .replace(/\[IMAGE:[^\]]*\]/g, "")
+      .replace(/#{1,6}\s*/g, "")
+      .replace(/\*\*([^*]+)\*\*/g, "$1")
+      .replace(/\*([^*]+)\*/g, "$1")
+      .replace(/__([^_]+)__/g, "$1")
+      .replace(/_([^_]+)_/g, "$1")
+      .replace(/`[^`]+`/g, "")
+      .replace(/^[-*•]\s+/gm, "")
+      .replace(/^\d+\.\s+/gm, "")
+      .replace(/^>\s*/gm, "")
+      .replace(/---+/g, "")
+      .replace(/\[([^\]]+)\]\([^)]+\)/g, "$1");
+    // line breaks
+    str = str.replace(/\n{2,}/g, "। ").replace(/\n/g, " ");
+    return str.replace(/\s+/g, " ").trim();
+  }
 
   async function speak(text, btn = null) {
     if (!text || !text.trim()) return;
     if (currentAudio) { currentAudio.pause(); currentAudio = null; }
-    if (btn) btn.innerHTML = `<svg class="ic"><use href="#i-volume"/></svg> লোড…`;
+    if (currentUtter) { speechSynthesis.cancel(); currentUtter = null; }
+    if (btn) btn.innerHTML = `<span class="tts-dots"><span></span><span></span><span></span></span>`;
+    const clean = stripForTTS(text);
+    if (!clean) { if (btn) btn.innerHTML = `<svg class="ic"><use href="#i-volume"/></svg> ভয়েস`; return; }
     try {
       const r = await fetch(api("/voice"), {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ text: text.slice(0, 8000), gender: settings.voiceGender || "female" }),
+        body: JSON.stringify({ text: clean.slice(0, 3000), gender: settings.voiceGender || "female" }),
       });
       if (!r.ok || r.status === 204) {
         if (btn) btn.innerHTML = `<svg class="ic"><use href="#i-volume"/></svg> ভয়েস`;
         return;
       }
       const blob = await r.blob();
-      currentAudio = new Audio(URL.createObjectURL(blob));
-      if (btn) {
-        btn.innerHTML = `<svg class="ic"><use href="#i-volume"/></svg> চলছে`;
-        currentAudio.onended = () => (btn.innerHTML = `<svg class="ic"><use href="#i-volume"/></svg> ভয়েস`);
-      }
+      if (blob.size < 100) { if (btn) btn.innerHTML = `<svg class="ic"><use href="#i-volume"/></svg> ভয়েস`; return; }
+      const url = URL.createObjectURL(blob);
+      currentAudio = new Audio(url);
+      if (btn) btn.innerHTML = `<svg class="ic"><use href="#i-volume"/></svg> চলছে`;
+      currentAudio.onended = () => {
+        currentAudio = null; URL.revokeObjectURL(url);
+        if (btn) btn.innerHTML = `<svg class="ic"><use href="#i-volume"/></svg> ভয়েস`;
+      };
+      currentAudio.onerror = () => {
+        currentAudio = null; URL.revokeObjectURL(url);
+        if (btn) btn.innerHTML = `<svg class="ic"><use href="#i-volume"/></svg> ভয়েস`;
+      };
       await currentAudio.play();
     } catch {
       if (btn) btn.innerHTML = `<svg class="ic"><use href="#i-volume"/></svg> ভয়েস`;
     }
   }
 
-  function speakAndWait(text) {
+  function speakAndWait(text, statusEl = null) {
     return new Promise(async (resolve) => {
       if (!text || !text.trim()) return resolve();
+      if (currentAudio) { currentAudio.pause(); currentAudio = null; }
+      if (currentUtter) { speechSynthesis.cancel(); currentUtter = null; }
+      const clean = stripForTTS(text);
+      if (!clean) return resolve();
+      if (statusEl) statusEl.innerHTML = `বলছি… <span class="tts-dots"><span></span><span></span><span></span></span>`;
       try {
-        if (currentAudio) { currentAudio.pause(); currentAudio = null; }
         const r = await fetch(api("/voice"), {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ text: text.slice(0, 8000), gender: settings.voiceGender || "female" }),
+          body: JSON.stringify({ text: clean.slice(0, 3000), gender: settings.voiceGender || "female" }),
         });
         if (!r.ok || r.status === 204) return resolve();
         const blob = await r.blob();
-        currentAudio = new Audio(URL.createObjectURL(blob));
-        currentAudio.onended = () => resolve();
-        currentAudio.onerror = () => resolve();
+        if (blob.size < 100) return resolve();
+        const url = URL.createObjectURL(blob);
+        currentAudio = new Audio(url);
+        currentAudio.onended = () => { currentAudio = null; URL.revokeObjectURL(url); resolve(); };
+        currentAudio.onerror = () => { currentAudio = null; URL.revokeObjectURL(url); resolve(); };
         await currentAudio.play();
       } catch { resolve(); }
     });
@@ -494,32 +527,17 @@ PARISA MEMORY PORTAL এ আপনাকে স্বাগতম।
   };
 
   // ── Audio call ─────────────────────────────────────────────────────
-  let callOn = false, callRecognizer = null, callMuted = false;
+  let callOn = false, callRecognizer = null;
   $("#audioCallBtn").onclick  = () => startAudioCall();
   $("#endAudioCall").onclick  = () => endAudioCall();
-  $("#muteAudioCall").onclick = () => {
-    callMuted = !callMuted;
-    $("#muteAudioCall").classList.toggle("muted", callMuted);
-    if (callMuted && callRecognizer) { try { callRecognizer.stop(); } catch {} }
-    else if (!callMuted && callOn) callLoop();
-  };
-
-  function setAvatarState(state) {
-    const circle = $("#avatarCircle");
-    const wave = $("#audioWave");
-    if (!circle || !wave) return;
-    circle.className = "avatar-circle " + state;
-    wave.className = "audio-wave " + state;
-    const status = { listening: "শুনছি…", talking: "বলছি…", thinking: "ভাবছি…" };
-    if (status[state]) $("#audioCallStatus").textContent = status[state];
-  }
+  $("#muteAudioCall").onclick = () => { if (callRecognizer) callRecognizer.stop(); };
 
   async function startAudioCall() {
     if (!SR) { alert("ব্রাউজার ভয়েস কল সাপোর্ট করে না।"); return; }
-    callOn = true; callMuted = false;
+    callOn = true;
     $("#audioCallView").hidden = false;
+    $("#audioCallStatus").textContent = "শুনছি…";
     $("#audioCallCaption").textContent = "";
-    setAvatarState("listening");
     callLoop();
   }
   function endAudioCall() {
@@ -529,7 +547,7 @@ PARISA MEMORY PORTAL এ আপনাকে স্বাগতম।
     $("#audioCallView").hidden = true;
   }
   function callLoop() {
-    if (!callOn || callMuted) return;
+    if (!callOn) return;
     callRecognizer = makeRecognizer();
     if (!callRecognizer) return;
     let finalText = "";
@@ -542,14 +560,13 @@ PARISA MEMORY PORTAL এ আপনাকে স্বাগতম।
       if (!callOn) return;
       const said = finalText.trim();
       if (!said) return setTimeout(callLoop, 200);
-      setAvatarState("thinking");
+      $("#audioCallStatus").textContent = "ভাবছি…";
       const reply = await callChat(said);
       if (!callOn) return;
-      setAvatarState("talking");
       $("#audioCallCaption").textContent = reply;
-      await speakAndWait(reply);
+      await speakAndWait(reply, $("#audioCallStatus"));
       if (!callOn) return;
-      setAvatarState("listening");
+      $("#audioCallStatus").textContent = "শুনছি…";
       callLoop();
     };
     callRecognizer.start();
@@ -571,37 +588,11 @@ PARISA MEMORY PORTAL এ আপনাকে স্বাগতম।
   }
 
   // ── Video call ─────────────────────────────────────────────────────
-  let vcStream = null, vcFacing = "user", vcOn = false, vcRecognizer = null, vcMuted = false;
+  let vcStream = null, vcFacing = "user", vcOn = false, vcRecognizer = null;
   $("#videoCallBtn").onclick   = () => startVideoCall();
   $("#endVideoCall").onclick   = () => endVideoCall();
   $("#flipVideoCall").onclick  = async () => { vcFacing = vcFacing === "user" ? "environment" : "user"; await openVcCam(); };
-  $("#muteVideoCall").onclick  = () => {
-    vcMuted = !vcMuted;
-    $("#muteVideoCall").classList.toggle("muted", vcMuted);
-    if (vcMuted && vcRecognizer) { try { vcRecognizer.stop(); } catch {} }
-    else if (!vcMuted && vcOn) videoCallLoop();
-  };
-  $("#askVideoBtn").onclick = () => {
-    const img = snapshot($("#videoCallVideo"), $("#videoCallCanvas"));
-    setVcState("thinking");
-    fetch(api("/analyze"), {
-      method: "POST", headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ prompt: "এই ভিডিওতে কী দেখছ? বাংলায় বিস্তারিত বল।", file: img, mime: "image/jpeg", userName: settings.userName })
-    }).then(r => r.json()).then(d => {
-      const reply = d.reply || "বুঝতে পারলাম না।";
-      $("#videoCallCaption").textContent = reply;
-      setVcState("talking");
-      speakAndWait(reply).then(() => setVcState("idle"));
-    }).catch(() => setVcState("idle"));
-  };
-
-  function setVcState(state) {
-    const wave = $("#vcAiWave");
-    if (!wave) return;
-    wave.className = "vc-ai-wave " + (state === "talking" ? "" : "idle");
-    const statuses = { talking: "বলছি…", thinking: "ভাবছি…", idle: "কানেক্টেড", listening: "শুনছি…" };
-    $("#videoCallStatus").textContent = statuses[state] || "কানেক্টেড";
-  }
+  $("#muteVideoCall").onclick  = () => { if (vcRecognizer) vcRecognizer.stop(); };
 
   async function openVcCam() {
     try {
@@ -637,7 +628,7 @@ PARISA MEMORY PORTAL এ আপনাকে স্বাগতম।
       if (!vcOn) return;
       const said = finalText.trim();
       if (!said) return setTimeout(videoCallLoop, 200);
-      setVcState("thinking");
+      $("#videoCallStatus").textContent = "ভাবছি…";
       const img = snapshot($("#videoCallVideo"), $("#videoCallCanvas"));
       try {
         const r = await fetch(api("/analyze"), {
@@ -646,12 +637,11 @@ PARISA MEMORY PORTAL এ আপনাকে স্বাগতম।
         });
         const data = await r.json();
         const reply = data.reply || "কিছু বুঝতে পারলাম না।";
-        setVcState("talking");
         $("#videoCallCaption").textContent = reply;
-        await speakAndWait(reply);
+        await speakAndWait(reply, $("#videoCallStatus"));
       } catch { $("#videoCallCaption").textContent = "নেটওয়ার্ক সমস্যা"; }
       if (!vcOn) return;
-      setVcState("listening");
+      $("#videoCallStatus").textContent = "কানেক্টেড";
       videoCallLoop();
     };
     vcRecognizer.start();
