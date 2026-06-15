@@ -712,7 +712,17 @@ async function synthesizeEdgeTTS(text, gender = "female") {
       });
     });
     return chunks.length ? Buffer.concat(chunks) : null;
-  } catch (e) { console.warn("edge-tts:", e.message); return null; }
+  } catch (e) {
+    console.warn("edge-tts:", e?.message || e);
+    // Edge TTS ব্যর্থ হলে Google TTS fallback
+    try {
+      const encoded = encodeURIComponent(text.slice(0, 200));
+      const url = `https://translate.google.com/translate_tts?ie=UTF-8&q=${encoded}&tl=bn&client=tw-ob`;
+      const r = await fetch(url, { headers: { "User-Agent": "Mozilla/5.0" } });
+      if (r.ok) return Buffer.from(await r.arrayBuffer());
+    } catch(fe) { console.warn("gTTS fallback failed:", fe.message); }
+    return null;
+  }
 }
 
 // ─── Routes ───────────────────────────────────────────────────────
