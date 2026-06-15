@@ -208,7 +208,7 @@ PARISA MEMORY PORTAL এ আপনাকে স্বাগতম।
   $("#saveSettings").onclick = () => {
     const sel = document.querySelector('input[name="voiceGender"]:checked');
     settings.voiceGender = sel ? sel.value : "female";
-    settings.userName    = $("#userName").value.trim() || "দাদা";
+    settings.userName    = $("#userName").value.trim();
     saveSettings();
     closeSettings();
   };
@@ -219,8 +219,19 @@ PARISA MEMORY PORTAL এ আপনাকে স্বাগতম।
       openSettings();
     }
   };
+  $("#refreshDrive").onclick = async () => {
+    const el = $("#refreshStatus");
+    el.textContent = "আপডেট হচ্ছে...";
+    try {
+      const r = await fetch(api("/refresh-drive"), { method: "POST" });
+      const d = await r.json();
+      el.textContent = d.ok ? "✅ আপডেট হয়েছে" : "❌ সমস্যা হয়েছে";
+    } catch { el.textContent = "❌ সংযোগ সমস্যা"; }
+    setTimeout(() => el.textContent = "", 3000);
+  };
+
   $("#testVoice").onclick = () => {
-    speak("আসসালামু ওয়ালাইকুম। আমি পারিসা, আপনাকে স্বাগতম।");
+    speak("আসসালামু ওয়ালাইকুম। পারিসা মেমোরি পোর্টালে আপনাকে স্বাগতম।");
   };
 
   // ── Voice: Microsoft Edge TTS (server-side) ─────────────────────

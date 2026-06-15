@@ -699,6 +699,15 @@ async function synthesizeEdgeTTS(text, gender = "female") {
 function mount(prefix) {
   prefix = prefix.replace(/\/$/, "");
 
+  app.post(prefix + "/refresh-drive", async (_req, res) => {
+    try {
+      await refreshDriveMemory();
+      res.json({ ok: true });
+    } catch(e) {
+      res.json({ ok: false, error: e.message });
+    }
+  });
+
   app.get(prefix + "/healthz", (_req, res) =>
     res.json({
       ok: true,
