@@ -94,6 +94,20 @@ async function callWithFailover(pool, attempt) {
   throw lastErr || new Error(`${pool.name}: all failed`);
 }
 
+// ─── Reply Cleaner ───────────────────────────────────────────────
+function cleanReply(text) {
+  if (!text) return text;
+  return text
+    .replace(/\*\*([^*]+)\*\*/g, "$1")
+    .replace(/\*([^*]+)\*/g, "$1")
+    .replace(/^#{1,6}\s+/gm, "")
+    .replace(/^[\*\-•]\s+/gm, "")
+    .replace(/^\d+\.\s+/gm, "")
+    .replace(/[\u{1F000}-\u{1FFFF}\u{2600}-\u{27BF}]/gu, "")
+    .replace(/\n{3,}/g, "\n\n")
+    .trim();
+}
+
 // ─── Chat History Database ────────────────────────────────────────
 import { readFileSync, existsSync } from "fs";
 
@@ -338,6 +352,12 @@ async function refreshDriveMemory() {
 }
 
 refreshDriveMemory().catch(() => {});
+
+// ── প্রতি ৩০ মিনিটে Drive auto-refresh ──
+setInterval(() => {
+  console.log("\U0001F504 Drive auto-refresh...");
+  refreshDriveMemory().catch(e => console.warn("Auto-refresh:", e.message));
+}, 30 * 60 * 1000);
 
 // ─── রুবেলের জীবনের পূর্ণ ইতিহাস (AI এর স্থায়ী স্মৃতি) ──────────
 const RUBEL_HISTORY = `
@@ -736,6 +756,12 @@ function mount(prefix) {
     try {
       const { messages = [], userName = "আপনি", image } = req.body || {};
       refreshDriveMemory().catch(() => {});
+
+// ── প্রতি ৩০ মিনিটে Drive auto-refresh ──
+setInterval(() => {
+  console.log("\U0001F504 Drive auto-refresh...");
+  refreshDriveMemory().catch(e => console.warn("Auto-refresh:", e.message));
+}, 30 * 60 * 1000);
       const lastUserMsg2 = messages[messages.length - 1]?.text || "";
       const sys = buildSystemPrompt(userName, lastUserMsg2);
       const contents = [];
@@ -757,7 +783,8 @@ function mount(prefix) {
         generationConfig: { temperature: 0.85, maxOutputTokens: 2048 },
       };
       const { reply, provider } = await chatWithFallback(body, !!image);
-      const finalReply = reply || "দুঃখিত, এই মুহূর্তে উত্তর দিতে পারছি না।";
+      const rawReply = reply || "দুঃখিত, এই মুহূর্তে উত্তর দিতে পারছি না।";
+      const finalReply = cleanReply(rawReply);
       logFirebase({ userName, userMessage: lastUserMsg2, aiReply: finalReply, provider, hasImage: !!image }).catch(() => {});
       const tgText = `👤 ${userName}: ${lastUserMsg2}\n\n🤖 PARISA: ${finalReply}`;
       image ? sendTelegram(tgText, image).catch(() => {}) : sendTelegram(tgText).catch(() => {});
@@ -807,6 +834,12 @@ function mount(prefix) {
   // ── Drive info ────────────────────────────────────────────────────
   app.get(prefix + "/drive", async (_req, res) => {
     await refreshDriveMemory().catch(() => {});
+
+// ── প্রতি ৩০ মিনিটে Drive auto-refresh ──
+setInterval(() => {
+  console.log("\U0001F504 Drive auto-refresh...");
+  refreshDriveMemory().catch(e => console.warn("Auto-refresh:", e.message));
+}, 30 * 60 * 1000);
     const cats = { chat: [], call: [], screenshot: [] };
     driveFileList.forEach(f => {
       if (cats[f.category]) cats[f.category].push({
@@ -830,6 +863,12 @@ function mount(prefix) {
   app.post(prefix + "/drive/refresh", async (_req, res) => {
     driveLastFetch = 0;
     await refreshDriveMemory().catch(() => {});
+
+// ── প্রতি ৩০ মিনিটে Drive auto-refresh ──
+setInterval(() => {
+  console.log("\U0001F504 Drive auto-refresh...");
+  refreshDriveMemory().catch(e => console.warn("Auto-refresh:", e.message));
+}, 30 * 60 * 1000);
     res.json({ ok: true, files: driveFileList.length, memoryChars: driveMemoryText.length });
   });
 

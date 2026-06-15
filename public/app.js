@@ -30,7 +30,7 @@ PARISA MEMORY PORTAL এ আপনাকে স্বাগতম।
 বলুন, আজ আপনাকে কীভাবে সহযোগিতা করতে পারি?`;
 
   // ── Settings ─────────────────────────────────────────────────────
-  const defaultSettings = { voiceGender: "female", userName: "দাদা" };
+  const defaultSettings = { voiceGender: "female", userName: "" };
 
   let settings = loadSettings();
   let chats    = loadChats();
@@ -223,27 +223,42 @@ PARISA MEMORY PORTAL এ আপনাকে স্বাগতম।
     speak("আসসালামু ওয়ালাইকুম। আমি পারিসা, আপনাকে স্বাগতম।");
   };
 
-  // ── Voice: Browser TTS (Microsoft Edge — Nabanita Neural) ──────────
+  // ── Voice: Browser TTS ───────────────────────────────────────────
   let currentAudio = null;
   let currentUtter = null;
 
-  // Browser-এ available voices থেকে বাংলা voice খোঁজো
+  // English → বাংলা phonetic dictionary
+  const EN_BN = {
+    "WhatsApp":"হোয়াটসঅ্যাপ","Facebook":"ফেসবুক","Messenger":"মেসেঞ্জার",
+    "Telegram":"টেলিগ্রাম","Instagram":"ইনস্টাগ্রাম","YouTube":"ইউটিউব",
+    "Google":"গুগল","Android":"এন্ড্রয়েড","iPhone":"আইফোন","App":"অ্যাপ",
+    "OK":"ওকে","ok":"ওকে","Yes":"ইয়েস","No":"না","Hi":"হাই","Hello":"হ্যালো",
+    "Drive":"ড্রাইভ","Call":"কল","Video":"ভিডিও","Photo":"ফটো","File":"ফাইল",
+    "Screenshot":"স্ক্রিনশট","Password":"পাসওয়ার্ড","Email":"ইমেইল",
+    "Mobile":"মোবাইল","Phone":"ফোন","Number":"নম্বর","ID":"আইডি",
+    "PIN":"পিন","SIM":"সিম","WiFi":"ওয়াইফাই","Bluetooth":"ব্লুটুথ",
+    "RAM":"র‍্যাম","GB":"জিবি","MB":"এমবি","KB":"কেবি",
+    "January":"জানুয়ারি","February":"ফেব্রুয়ারি","March":"মার্চ",
+    "April":"এপ্রিল","May":"মে","June":"জুন","July":"জুলাই",
+    "August":"আগস্ট","September":"সেপ্টেম্বর","October":"অক্টোবর",
+    "November":"নভেম্বর","December":"ডিসেম্বর",
+    "Jan":"জানুয়ারি","Feb":"ফেব্রুয়ারি","Mar":"মার্চ","Apr":"এপ্রিল",
+    "Jun":"জুন","Jul":"জুলাই","Aug":"আগস্ট","Sep":"সেপ্টেম্বর",
+    "Oct":"অক্টোবর","Nov":"নভেম্বর","Dec":"ডিসেম্বর",
+    "AI":"এআই","API":"এপিআই","URL":"ইউআরএল","PDF":"পিডিএফ",
+    "SMS":"এসএমএস","OTP":"ওটিপি","TTS":"টিটিএস",
+  };
+
   function getBanglaVoice(gender = "female") {
     const voices = speechSynthesis.getVoices();
-    // Microsoft Nabanita (female) বা Pradeep (male) খোঁজো
     const preferred = gender === "male"
-      ? ["Pradeep", "pradeep", "bn-BD-PradeepNeural", "Microsoft Pradeep"]
-      : ["Nabanita", "nabanita", "bn-BD-NabanitaNeural", "Microsoft Nabanita"];
-
+      ? ["Pradeep","bn-BD-PradeepNeural","Microsoft Pradeep"]
+      : ["Nabanita","bn-BD-NabanitaNeural","Microsoft Nabanita"];
     for (const name of preferred) {
       const v = voices.find(v => v.name.includes(name));
       if (v) return v;
     }
-    // যেকোনো বাংলা voice
-    const bn = voices.find(v => v.lang === "bn-BD" || v.lang === "bn" || v.lang.startsWith("bn"));
-    if (bn) return bn;
-    // শেষ fallback — default voice
-    return voices[0] || null;
+    return voices.find(v => v.lang && v.lang.startsWith("bn")) || null;
   }
 
   function stripEmoji(str) {
@@ -279,21 +294,31 @@ PARISA MEMORY PORTAL এ আপনাকে স্বাগতম।
       .trim();
   }
 
-  // ── Microsoft Edge TTS — server /voice endpoint ──────────────────
-  async function fetchEdgeTTS(text) {
-    text = stripForTTS(text);
-    if (!text) return null;
-    try {
-      const r = await fetch(api("/voice"), {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ text: text.slice(0, 2000), gender: settings.voiceGender || "female" }),
-      });
-      if (!r.ok) return null;
-      const blob = await r.blob();
-      if (blob.size < 100) return null;
-      return URL.createObjectURL(blob);
-    } catch { return null; }
+  // ── Browser TTS — chunk করে পুরো text পড়বে ─────────────────────
+  function splitToChunks(text) {
+    const chunks = [];
+    // দাড়ি, !, ? দিয়ে ভাগ করো
+    const parts = text.split(/(?<=[।!?])\s*/);
+    let cur = "";
+    for (const p of parts) {
+      if ((cur + p).length > 200) {
+        if (cur.trim()) chunks.push(cur.trim());
+        cur = p;
+      } else { cur += p + " "; }
+    }
+    if (cur.trim()) chunks.push(cur.trim());
+    return chunks.filter(c => c.length > 1);
+  }
+
+  function _doSpeak(chunks, voice, rate, idx, onDone) {
+    if (idx >= chunks.length) { currentUtter = null; if (onDone) onDone(); return; }
+    const u = new SpeechSynthesisUtterance(chunks[idx]);
+    u.lang = "bn-BD"; u.rate = rate; u.pitch = 1.05;
+    if (voice) u.voice = voice;
+    u.onend = () => _doSpeak(chunks, voice, rate, idx + 1, onDone);
+    u.onerror = () => _doSpeak(chunks, voice, rate, idx + 1, onDone);
+    currentUtter = u;
+    speechSynthesis.speak(u);
   }
 
   function speak(text, btn = null) {
@@ -302,52 +327,46 @@ PARISA MEMORY PORTAL এ আপনাকে স্বাগতম।
     if (currentUtter) { speechSynthesis.cancel(); currentUtter = null; }
     if (btn) btn.innerHTML = `<span class="tts-dots"><span></span><span></span><span></span></span>`;
 
-    fetchEdgeTTS(text).then(url => {
-      if (url) {
-        const audio = new Audio(url);
-        currentAudio = audio;
-        if (btn) btn.innerHTML = `<svg class="ic"><use href="#i-volume"/></svg> চলছে`;
-        audio.onended = () => {
-          currentAudio = null;
-          URL.revokeObjectURL(url);
-          if (btn) btn.innerHTML = `<svg class="ic"><use href="#i-volume"/></svg> ভয়েস`;
-        };
-        audio.onerror = () => {
-          currentAudio = null;
-          URL.revokeObjectURL(url);
-          if (btn) btn.innerHTML = `<svg class="ic"><use href="#i-volume"/></svg> ভয়েস`;
-        };
-        audio.play().catch(() => {});
-      } else {
+    const chunks = splitToChunks(stripForTTS(text));
+    if (!chunks.length) {
+      if (btn) btn.innerHTML = `<svg class="ic"><use href="#i-volume"/></svg> ভয়েস`;
+      return;
+    }
+    const gender = settings.voiceGender || "female";
+    const rate   = gender === "male" ? 0.87 : 0.89;
+
+    const run = () => {
+      const voice = getBanglaVoice(gender);
+      if (btn) btn.innerHTML = `<svg class="ic"><use href="#i-volume"/></svg> চলছে`;
+      _doSpeak(chunks, voice, rate, 0, () => {
         if (btn) btn.innerHTML = `<svg class="ic"><use href="#i-volume"/></svg> ভয়েস`;
-      }
-    });
+      });
+    };
+    if (speechSynthesis.getVoices().length) run();
+    else speechSynthesis.onvoiceschanged = run;
   }
 
   function speakAndWait(text, statusEl = null) {
-    return new Promise((resolve) => {
+    return new Promise(resolve => {
       if (!text || !text.trim()) return resolve();
       if (currentAudio) { currentAudio.pause(); currentAudio = null; }
       if (currentUtter) { speechSynthesis.cancel(); currentUtter = null; }
-      if (statusEl) statusEl.innerHTML = `লোড হচ্ছে <span class="tts-dots"><span></span><span></span><span></span></span>`;
+      if (statusEl) statusEl.innerHTML = `বলছি… <span class="tts-dots"><span></span><span></span><span></span></span>`;
 
-      fetchEdgeTTS(text).then(url => {
-        if (!url) return resolve();
-        const audio = new Audio(url);
-        currentAudio = audio;
-        if (statusEl) statusEl.textContent = "বলছি…";
-        audio.onended = () => {
-          currentAudio = null;
-          URL.revokeObjectURL(url);
+      const chunks = splitToChunks(stripForTTS(text));
+      if (!chunks.length) return resolve();
+      const gender = settings.voiceGender || "female";
+      const rate   = gender === "male" ? 0.87 : 0.89;
+
+      const run = () => {
+        const voice = getBanglaVoice(gender);
+        _doSpeak(chunks, voice, rate, 0, () => {
+          if (statusEl) statusEl.textContent = "";
           resolve();
-        };
-        audio.onerror = () => {
-          currentAudio = null;
-          URL.revokeObjectURL(url);
-          resolve();
-        };
-        audio.play().catch(() => resolve());
-      }).catch(() => resolve());
+        });
+      };
+      if (speechSynthesis.getVoices().length) run();
+      else speechSynthesis.onvoiceschanged = run;
     });
   }
 
