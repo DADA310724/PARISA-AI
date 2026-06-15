@@ -354,7 +354,7 @@ PARISA MEMORY PORTAL এ আপনাকে স্বাগতম।
 
   async function fetchEdgeTTS(text, gender) {
     try {
-      const res = await fetch("/voice", {
+      const res = await fetch(api("/voice"), {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ text, gender }),
