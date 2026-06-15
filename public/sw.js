@@ -1,4 +1,4 @@
-const CACHE = "parisa-v5";
+const CACHE = "parisa-v6";
 const STATIC = ["/", "/index.html", "/style.css", "/app.js", "/manifest.json", "/logo.jpg"];
 
 self.addEventListener("install", (e) => {
