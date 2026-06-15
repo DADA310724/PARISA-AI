@@ -708,13 +708,6 @@ PARISA MEMORY PORTAL এ আপনাকে স্বাগতম।
   function showWelcomeIfFirst() {
     if (localStorage.getItem(LS_WELCOMED)) return;
     localStorage.setItem(LS_WELCOMED, "1");
-    if (!getActive()) newChat();
-    const c = getActive();
-    const welcomeMsg = { role: "assistant", text: WELCOME_TEXT };
-    c.messages.push(welcomeMsg);
-    c.updatedAt = Date.now();
-    persistChats();
-    renderChat();
     // Auto-play short intro after 1.5s
     setTimeout(() => speak("আসসালামু ওয়ালাইকুম। পারিসা মেমোরি পোর্টালে আপনাকে স্বাগতম।"), 1500);
   }
