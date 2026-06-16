@@ -685,8 +685,9 @@ async function synthesizeEdgeTTS(text, gender = "female") {
     const chunks = [];
     await new Promise((resolve, reject) => {
       audioStream.on("data", (d) => chunks.push(d));
+      audioStream.on("end",   resolve);
       audioStream.on("close", resolve);
-      audioStream.on("error", reject);
+      audioStream.on("error", (e) => { console.warn("TTS stream error:", e?.message); resolve(); });
     });
     return chunks.length ? Buffer.concat(chunks) : null;
   } catch (e) {
