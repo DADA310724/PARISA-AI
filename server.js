@@ -116,7 +116,7 @@ try {
   const dbPath = path.join(__dirname, "chat_database.json");
   if (existsSync(dbPath)) {
     CHAT_DB = JSON.parse(readFileSync(dbPath, "utf-8"));
-    console.log(`✅ Chat DB loaded — ${CHAT_DB.length} messages`);
+    const totalMsgs = CHAT_DB.reduce((s,c) => s+(c.messages||[]).length, 0); console.log(`✅ Chat DB loaded — ${totalMsgs} messages across ${CHAT_DB.length} chats`);
   }
 } catch(e) {
   console.warn("Chat DB load error:", e.message);
