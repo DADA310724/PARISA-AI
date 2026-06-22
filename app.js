@@ -219,7 +219,7 @@ PARISA MEMORY PORTAL এ আপনাকে স্বাগতম।
     speak("আসসালামু ওয়ালাইকুম। আমি পারিসা, আপনাকে স্বাগতম।");
   };
 
-  // ── Voice: Google Translate TTS (ফ্রি, কোনো API কী লাগে না) ──────────────────────
+  // ── Voice: Microsoft Edge TTS (প্রধান) + Google Translate (ব্যাকআপ) ────────────────
   let currentAudio = null;
 
   async function speak(text, btn = null) {
@@ -481,7 +481,7 @@ PARISA MEMORY PORTAL এ আপনাকে স্বাগতম।
     r.start();
   };
 
-  // ── Audio call ─────────────────────────────────────────────────────
+  // ── Audio call ─────���───────────────────────────────────────────────
   let callOn = false, callRecognizer = null;
   $("#audioCallBtn").onclick  = () => startAudioCall();
   $("#endAudioCall").onclick  = () => endAudioCall();

@@ -403,7 +403,7 @@ const RUBEL_HISTORY = `
 পারিসা নিজে থেকে রুবেলের সাথে যোগাযোগ করেন। জানান যে পরিস্থিতির চাপে এমন হয়েছে, সুযোগ বুঝে ফিরে আসবেন। এখান থেকে দেড় বছরের নিরবচ্ছিন্ন ডিজিটাল যোগাযোগ শুরু।
 
 ### সেপ্টেম্বর-ডিসেম্বর ২০২৪:
-রুবেল ১৮ লক্ষ টাকার গাড়ি ১৪ লক্ষে বিক্রি করে পরিস্থিতির মোকাবেলার চেষ্টা করেন। পারিসার আচরণে তীব্র ওঠানামা — কখনো গভীর ভালোবাসা, হঠাৎ তীব্র ঘৃণা ও গালিগালাজ, কারণ ছাড়াই ব্লক। রুবেল পারিসার একটি বান্ধবীর মাধ্যমে তাকে একটি ফোন কিনে দেন যেন যোগাযোগ রাখা যায়।
+রুবেল ১৮ লক্ষ টাকার গাড়ি ১৪ লক্ষে বিক্রি করে পরিস্থিতির মোকাবেলার চে��্টা করেন। পারিসার আচরণে তীব্র ওঠানামা — কখনো গভীর ভালোবাসা, হঠাৎ তীব্র ঘৃণা ও গালিগালাজ, কারণ ছাড়াই ব্লক। রুবেল পারিসার একটি বান্ধবীর মাধ্যমে তাকে একটি ফোন কিনে দেন যেন যোগাযোগ রাখা যায়।
 
 ### জানুয়ারি ২০২৫ (৪ তারিখ):
 পারিসা আবার যোগাযোগ করেন। ১৫ জানুয়ারি পর্যন্ত খুব ভালো যোগাযোগ চলে। ১৫ জানুয়ারি পারিসার মা দেখে ফেলেন, ফোন কেড়ে নেন। ৩২ দিন যোগাযোগ বন্ধ।
@@ -501,14 +501,14 @@ function buildSystemPrompt(userName = "আপনি", userQuery = "") {
 - ব্যবহারকারীকে সম্মানের সাথে ভালোবাসার সাথে কথা বলবে
 - কেউ "Hi", "Hello", "হ্যালো" বললে "ওয়ালাইকুম সালাম" বলবে না — স্বাভাবিক বাংলায় সাড়া দেবে যেমন "হ্যাঁ দাদা, বলুন!" বা "কেমন আছেন দাদা?"
 - কখনো ফাইলের নাম যেমন "history-context-2.txt", "My Wife...😘😘" ইত্যাদি উল্লেখ করবে না — এগুলো অভ্যন্তরীণ
-- কখনো "রেফারেন্স:", "খণ্ড ২", "টাইমলাইনে উল্লেখ আছে" এই ধরনের technical কথা বলবে না
+- কখনো "রেফারেন্স:", "খণ্ড ২", "টাইমলাইনে উল্লেখ আছে" এ��� ধরনের technical কথা বলবে না
 - সরাসরি স্বাভাবিকভাবে উত্তর দেবে যেন তুমি সব মনে রাখো
 - স্ক্রিনশট দেখাতে হলে [IMAGE:FILE_ID] format ব্যবহার করো
 - বাংলা সংখ্যা (১২৩৪৫) ব্যবহার করো, English number (12345) নয়
 
 তোমার জ্ঞান:
 
-১. বাংলা��েশের বিয়ে ও পারিবারিক আইন:
+১. বাংলা���েশের বিয়ে ও পারিবারিক আইন:
 - Muslim Family Laws Ordinance 1961
 - Child Marriage Restraint Act 2017 — বাল্যবিবাহ শাস্তিযোগ্য কিন্তু বিয়ে বাতিল হয় না আদালতের ডিক্রি ছাড়া
 - Dissolution of Muslim Marriages Act 1939
@@ -662,20 +662,9 @@ async function logFirebase(data) {
   } catch (e) { console.warn("firebase:", e.message); }
 }
 
-// ─── TTS: Google Translate (ফ্রি, কোনো API কী লাগে না) ────────────────────────
+// ─── TTS: Microsoft Edge TTS (প্রধান) + Google Translate (ব্যাকআপ) ────────────────
 async function synthesizeEdgeTTS(text, gender = "female") {
-  // Primary: Google Translate TTS — সম্পূর্ণ ফ্রি ও নির্ভরযোগ্য
-  try {
-    const encoded = encodeURIComponent(text.slice(0, 200));
-    const url = `https://translate.google.com/translate_tts?ie=UTF-8&q=${encoded}&tl=bn&client=tw-ob`;
-    const r = await fetch(url, { headers: { "User-Agent": "Mozilla/5.0" } });
-    if (r.ok) {
-      const buf = Buffer.from(await r.arrayBuffer());
-      if (buf.length > 100) return buf;
-    }
-  } catch(e) { console.warn("gTTS primary:", e.message); }
-  
-  // Fallback: msedge-tts (যদি পাওয়া যায়)
+  // Primary: Microsoft Edge TTS — সেরা কোয়ালিটি
   if (MsEdgeTTS) {
     const voiceName = gender === "male" ? "bn-BD-PradeepNeural" : "bn-BD-NabanitaNeural";
     try {
@@ -691,9 +680,20 @@ async function synthesizeEdgeTTS(text, gender = "female") {
       });
       if (chunks.length) return Buffer.concat(chunks);
     } catch (e) {
-      console.warn("edge-tts fallback:", e.message);
+      console.warn("msedge-tts primary:", e.message);
     }
   }
+  
+  // Fallback: Google Translate TTS (যদি Microsoft ব্যর্থ হয়)
+  try {
+    const encoded = encodeURIComponent(text.slice(0, 200));
+    const url = `https://translate.google.com/translate_tts?ie=UTF-8&q=${encoded}&tl=bn&client=tw-ob`;
+    const r = await fetch(url, { headers: { "User-Agent": "Mozilla/5.0" } });
+    if (r.ok) {
+      const buf = Buffer.from(await r.arrayBuffer());
+      if (buf.length > 100) return buf;
+    }
+  } catch(e) { console.warn("gTTS fallback:", e.message); }
   
   return null;
 }
