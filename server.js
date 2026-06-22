@@ -508,7 +508,7 @@ function buildSystemPrompt(userName = "আপনি", userQuery = "") {
 
 তোমার জ্ঞান:
 
-১. বাংলাদেশের বিয়ে ও পারিবারিক আইন:
+১. বাংলা��েশের বিয়ে ও পারিবারিক আইন:
 - Muslim Family Laws Ordinance 1961
 - Child Marriage Restraint Act 2017 — বাল্যবিবাহ শাস্তিযোগ্য কিন্তু বিয়ে বাতিল হয় না আদালতের ডিক্রি ছাড়া
 - Dissolution of Muslim Marriages Act 1939
@@ -662,38 +662,40 @@ async function logFirebase(data) {
   } catch (e) { console.warn("firebase:", e.message); }
 }
 
-// ─── Edge TTS (Original — Replit version) ────────────────────────
+// ─── TTS: Google Translate (ফ্রি, কোনো API কী লাগে না) ────────────────────────
 async function synthesizeEdgeTTS(text, gender = "female") {
-  if (!MsEdgeTTS) {
-    // Fallback: Google Translate TTS
-    try {
-      const encoded = encodeURIComponent(text.slice(0, 200));
-      const url = `https://translate.google.com/translate_tts?ie=UTF-8&q=${encoded}&tl=bn&client=tw-ob`;
-      const r = await fetch(url, { headers: { "User-Agent": "Mozilla/5.0" } });
-      if (r.ok) {
-        const buf = Buffer.from(await r.arrayBuffer());
-        if (buf.length > 100) return buf;
-      }
-    } catch(e) { console.warn("gTTS fallback:", e.message); }
-    return null;
-  }
-  const voiceName = gender === "male" ? "bn-BD-PradeepNeural" : "bn-BD-NabanitaNeural";
+  // Primary: Google Translate TTS — সম্পূর্ণ ফ্রি ও নির্ভরযোগ্য
   try {
-    const tts = new MsEdgeTTS();
-    await tts.setMetadata(voiceName, OUTPUT_FORMAT.AUDIO_24KHZ_96KBITRATE_MONO_MP3);
-    const { audioStream } = tts.toStream(text);
-    const chunks = [];
-    await new Promise((resolve, reject) => {
-      audioStream.on("data", (d) => chunks.push(d));
-      audioStream.on("end",   resolve);
-      audioStream.on("close", resolve);
-      audioStream.on("error", (e) => { console.warn("TTS stream error:", e?.message); resolve(); });
-    });
-    return chunks.length ? Buffer.concat(chunks) : null;
-  } catch (e) {
-    console.warn("edge-tts:", e.message);
-    return null;
+    const encoded = encodeURIComponent(text.slice(0, 200));
+    const url = `https://translate.google.com/translate_tts?ie=UTF-8&q=${encoded}&tl=bn&client=tw-ob`;
+    const r = await fetch(url, { headers: { "User-Agent": "Mozilla/5.0" } });
+    if (r.ok) {
+      const buf = Buffer.from(await r.arrayBuffer());
+      if (buf.length > 100) return buf;
+    }
+  } catch(e) { console.warn("gTTS primary:", e.message); }
+  
+  // Fallback: msedge-tts (যদি পাওয়া যায়)
+  if (MsEdgeTTS) {
+    const voiceName = gender === "male" ? "bn-BD-PradeepNeural" : "bn-BD-NabanitaNeural";
+    try {
+      const tts = new MsEdgeTTS();
+      await tts.setMetadata(voiceName, OUTPUT_FORMAT.AUDIO_24KHZ_96KBITRATE_MONO_MP3);
+      const { audioStream } = tts.toStream(text);
+      const chunks = [];
+      await new Promise((resolve, reject) => {
+        audioStream.on("data", (d) => chunks.push(d));
+        audioStream.on("end",   resolve);
+        audioStream.on("close", resolve);
+        audioStream.on("error", (e) => { console.warn("TTS stream error:", e?.message); resolve(); });
+      });
+      if (chunks.length) return Buffer.concat(chunks);
+    } catch (e) {
+      console.warn("edge-tts fallback:", e.message);
+    }
   }
+  
+  return null;
 }
 
 // ─── Routes ───────────────────────────────────────────────────────

@@ -41,7 +41,10 @@ PARISA MEMORY PORTAL এ আপনাকে স্বাগতম।
     try { return { ...defaultSettings, ...(JSON.parse(localStorage.getItem(LS_SETTINGS) || "{}")) }; }
     catch { return { ...defaultSettings }; }
   }
-  function saveSettings() { localStorage.setItem(LS_SETTINGS, JSON.stringify(settings)); }
+  function saveSettings() { 
+    localStorage.setItem(LS_SETTINGS, JSON.stringify(settings));
+    console.log("[v0] ✅ সেটিংস সেভ:", settings);
+  }
 
   function loadChats() {
     try { return JSON.parse(localStorage.getItem(LS_CHATS) || "{}"); } catch { return {}; }
@@ -216,7 +219,7 @@ PARISA MEMORY PORTAL এ আপনাকে স্বাগতম।
     speak("আসসালামু ওয়ালাইকুম। আমি পারিসা, আপনাকে স্বাগতম।");
   };
 
-  // ── Voice: Microsoft Edge TTS ─────────────────────────────────────
+  // ── Voice: Google Translate TTS (ফ্রি, কোনো API কী লাগে না) ──────────────────────
   let currentAudio = null;
 
   async function speak(text, btn = null) {
@@ -316,7 +319,7 @@ PARISA MEMORY PORTAL এ আপনাকে স্বাগতম।
     if (!getActive()) newChat();
     const c = getActive();
 
-    const userMsg = { role: "user", text: text || "এই ফাইলটা দেখো", image: pendingAttachment?.dataUrl };
+    const userMsg = { role: "user", text: text || "এই ফাই���টা দেখো", image: pendingAttachment?.dataUrl };
     c.messages.push(userMsg);
     if (c.messages.length === 1) c.title = (text || "ফাইল").slice(0, 36);
     c.updatedAt = Date.now();
