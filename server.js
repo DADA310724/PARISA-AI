@@ -485,7 +485,7 @@ function buildSystemPrompt(userName = "আপনি", userQuery = "") {
 
   return `তুমি PARISA — পারিসা মেমোরি পোর্টালের অফিশিয়াল AI।
 
-তোমাকে তৈরি করেছেন রুবেল (দাদা/কালাচাঁন)।
+তোমাকে তৈরি করেছেন রুবেল।
 ব্যবহারকারীর নাম: ${userName}
 
 তোমার কাজ:
@@ -499,7 +499,7 @@ function buildSystemPrompt(userName = "আপনি", userQuery = "") {
 - সর্বদা পরিষ্কার বাংলায় উত্তর দেবে
 - প্রমাণ না থাকলে স্পষ্ট বলবে "এই তারিখের/বিষয়ের তথ্য আমার কাছে নেই" — কখনো বানিয়ে বলবে না
 - ব্যবহারকারীকে সম্মানের সাথে ভালোবাসার সাথে কথা বলবে
-- কেউ "Hi", "Hello", "হ্যালো" বললে "ওয়ালাইকুম সালাম" বলবে না — স্বাভাবিক বাংলায় সাড়া দেবে যেমন "হ্যাঁ দাদা, বলুন!" বা "কেমন আছেন দাদা?"
+- কেউ "Hi", "Hello", "হ্যালো" বললে "ওয়ালাইকুম সালাম" বলবে না — স্বাভাবিক বাংলায় সাড়া দেবে যেমন "হ্যাঁ, বলুন!" বা "কীভাবে সাহায্য করতে পারি?"
 - কখনো ফাইলের নাম যেমন "history-context-2.txt", "My Wife...😘😘" ইত্যাদি উল্লেখ করবে না — এগুলো অভ্যন্তরীণ
 - কখনো "রেফারেন্স:", "খণ্ড ২", "টাইমলাইনে উল্লেখ আছে" এই ধরনের technical কথা বলবে না
 - সরাসরি স্বাভাবিকভাবে উত্তর দেবে যেন তুমি সব মনে রাখো
@@ -510,7 +510,7 @@ function buildSystemPrompt(userName = "আপনি", userQuery = "") {
 - "My Wife", "Nusrat Parisa", "পারিসা" নামের ID = পারিসার কথা
 - "Fatema Jannat", "পারিসার মা" = পারিসার মায়ের কথা
 - "Hafizur Rahman", "পারিসার বাবা" = পারিসার বাবার কথা
-- রুবেলের পাঠানো message sender = রুবেল/দাদা
+- রুবেলের পাঠানো message sender = রুবেল
 - কখনো sender ভুল করবে না — যে পাঠিয়েছে তার নামেই বলবে
 - হুবহু অরিজিনাল text copy করে দেবে, নিজে বদলাবে না
 
@@ -709,18 +709,22 @@ async function streamTTS(tts, inputText) {
 }
 
 // ─── TTS: Microsoft Edge TTS (primary) + Google Translate (fallback) ──────────
-async function synthesizeEdgeTTS(text, gender = "female") {
+async function synthesizeEdgeTTS(text, gender = "female", speed = 1.0) {
   if (!text || !text.trim()) return null;
   const clean = cleanForTTS(text);
   if (!clean) return null;
 
+  // SSML prosody rate: convert 1.0 → "+0%", 0.7 → "-30%", 1.4 → "+40%"
+  const ratePct = Math.round((speed - 1) * 100);
+  const rateStr = ratePct >= 0 ? `+${ratePct}%` : `${ratePct}%`;
+  const voiceName = gender === "male" ? "bn-BD-PradeepNeural" : "bn-BD-NabanitaNeural";
+  const ssml = `<speak version='1.0' xmlns='http://www.w3.org/2001/10/synthesis' xml:lang='bn-BD'><voice name='${voiceName}'><prosody rate='${rateStr}'>${clean}</prosody></voice></speak>`;
+
   if (MsEdgeTTS) {
-    const voiceName = gender === "male" ? "bn-BD-PradeepNeural" : "bn-BD-NabanitaNeural";
     try {
       const tts = new MsEdgeTTS();
-      // 24kHz 96kbps — সেরা কোয়ালিটি, স্পষ্ট বাংলা উচ্চারণ
       await tts.setMetadata(voiceName, OUTPUT_FORMAT.AUDIO_24KHZ_96KBITRATE_MONO_MP3);
-      const buf = await streamTTS(tts, clean);
+      const buf = await streamTTS(tts, ssml);
       if (buf) return buf;
     } catch (e) {
       console.warn("msedge-tts:", e.message);
@@ -729,9 +733,8 @@ async function synthesizeEdgeTTS(text, gender = "female") {
     // Retry with fresh instance (network timeout হলে)
     try {
       const tts2 = new MsEdgeTTS();
-      const voiceName2 = gender === "male" ? "bn-BD-PradeepNeural" : "bn-BD-NabanitaNeural";
-      await tts2.setMetadata(voiceName2, OUTPUT_FORMAT.AUDIO_24KHZ_48KBITRATE_MONO_MP3);
-      const buf = await streamTTS(tts2, clean);
+      await tts2.setMetadata(voiceName, OUTPUT_FORMAT.AUDIO_24KHZ_48KBITRATE_MONO_MP3);
+      const buf = await streamTTS(tts2, ssml);
       if (buf) return buf;
     } catch (e) { console.warn("msedge-tts retry:", e.message); }
   }
@@ -862,9 +865,10 @@ function mount(prefix) {
   // ── Voice ─────────────────────────────────────────────────────────
   app.post(prefix + "/voice", async (req, res) => {
     try {
-      const { text, gender = "female" } = req.body || {};
+      const { text, gender = "female", speed = 1.0 } = req.body || {};
       if (!text) return res.status(204).end();
-      const audio = await synthesizeEdgeTTS(String(text).slice(0, 4000), gender);
+      const spd = Math.min(Math.max(parseFloat(speed) || 1.0, 0.5), 2.0);
+      const audio = await synthesizeEdgeTTS(String(text).slice(0, 4000), gender, spd);
       if (!audio) return res.status(204).end();
       res.setHeader("Content-Type", "audio/mpeg");
       res.send(audio);
