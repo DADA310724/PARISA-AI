@@ -1,12 +1,16 @@
 {
-  "name": "parisa-ai",
+  "name": "@workspace/portal",
   "version": "2.0.0",
+  "private": true,
   "type": "module",
   "scripts": {
-    "start": "node --max-old-space-size=350 server.js"
+    "dev": "node --max-old-space-size=350 server.js",
+    "start": "node --max-old-space-size=350 server.js",
+    "build": "echo 'no build step'",
+    "serve": "node --max-old-space-size=350 server.js",
+    "typecheck": "echo 'no typecheck'"
   },
   "dependencies": {
-    "@google/generative-ai": "^0.3.0",
     "cors": "^2.8.5",
     "express": "^4.18.2",
     "googleapis": "^140.0.1",
