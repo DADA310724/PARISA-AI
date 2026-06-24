@@ -499,7 +499,7 @@ PARISA MEMORY PORTAL এ আপনাকে স্বাগতম।
     try {
       if (camStream) camStream.getTracks().forEach(t => t.stop());
       camStream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: facing }, audio: false });
-      video.srcObject = camStream; view.hidden = false; view.style.display = "";
+      video.srcObject = camStream; view.classList.add("is-open");
     } catch (e) { alert("ক্যামেরা চালু করা যাচ্ছে না: " + e.message); }
   }
   function stopCam() { if (camStream) { camStream.getTracks().forEach(t => t.stop()); camStream = null; } }
@@ -509,7 +509,7 @@ PARISA MEMORY PORTAL এ আপনাকে স্বাগতম।
     return canvas.toDataURL("image/jpeg", 0.85);
   }
   $("#cameraBtn").onclick = () => startCam($("#cameraView"), $("#camVideo"), camFacing);
-  $("#closeCam").onclick  = () => { stopCam(); $("#cameraView").hidden = true; $("#cameraView").style.display = "none"; };
+  $("#closeCam").onclick  = () => { stopCam(); $("#cameraView").classList.remove("is-open"); };
   $("#flipCam").onclick   = () => { camFacing = camFacing === "environment" ? "user" : "environment"; startCam($("#cameraView"), $("#camVideo"), camFacing); };
 
   async function askAboutCamera(promptText) {
@@ -546,7 +546,7 @@ PARISA MEMORY PORTAL এ আপনাকে স্বাগতম।
   async function startAudioCall() {
     if (!SR) { alert("ব্রাউজার ভয়েস কল সাপোর্ট করে না।"); return; }
     callOn = true;
-    $("#audioCallView").hidden = false; $("#audioCallView").style.display = "";
+    $("#audioCallView").classList.add("is-open");
     $("#audioCallStatus").textContent = "শুনছি…";
     $("#audioCallCaption").textContent = "";
     callLoop();
@@ -555,7 +555,7 @@ PARISA MEMORY PORTAL এ আপনাকে স্বাগতম।
     callOn = false;
     if (callRecognizer) { try { callRecognizer.stop(); } catch {} }
     if (currentAudio) { currentAudio.pause(); currentAudio = null; }
-    $("#audioCallView").hidden = true; $("#audioCallView").style.display = "none";
+    $("#audioCallView").classList.remove("is-open");
   }
   function callLoop() {
     if (!callOn) return;
@@ -615,7 +615,7 @@ PARISA MEMORY PORTAL এ আপনাকে স্বাগতম।
   async function startVideoCall() {
     if (!SR) { alert("ব্রাউজার ভয়েস ইনপুট সাপোর্ট করে না।"); return; }
     vcOn = true;
-    $("#videoCallView").hidden = false; $("#videoCallView").style.display = "";
+    $("#videoCallView").classList.add("is-open");
     $("#videoCallStatus").textContent = "কানেক্টেড";
     $("#videoCallCaption").textContent = "";
     await openVcCam();
@@ -626,7 +626,7 @@ PARISA MEMORY PORTAL এ আপনাকে স্বাগতম।
     if (vcRecognizer) { try { vcRecognizer.stop(); } catch {} }
     if (vcStream) { vcStream.getTracks().forEach(t => t.stop()); vcStream = null; }
     if (currentAudio) { currentAudio.pause(); currentAudio = null; }
-    $("#videoCallView").hidden = true; $("#videoCallView").style.display = "none";
+    $("#videoCallView").classList.remove("is-open");
   }
   function videoCallLoop() {
     if (!vcOn) return;
@@ -681,7 +681,7 @@ PARISA MEMORY PORTAL এ আপনাকে স্বাগতম।
   // ── Init — force hide all fullscreen views (PWA cache safety) ────
   ["audioCallView","videoCallView","cameraView"].forEach(id => {
     const el = document.getElementById(id);
-    if (el) { el.hidden = true; el.style.display = "none"; }
+    if (el) { el.classList.remove("is-open"); el.hidden = false; }
   });
   callOn = false; vcOn = false;
 
