@@ -15,7 +15,7 @@
 PARISA MEMORY PORTAL এ আপনাকে স্বাগতম।
 
 আমি এই সিস্টেমের অফিশিয়াল এআই রিপ্রেজেন্টেটিভ (PARISA)।
-আমাকে তৈরী করেছেন আমার ডেভলপার (দাদা)।
+আমাকে তৈরী করেছেন আমার ডেভলপার।
 
 আমার কাজ হল পারিসা মেমোরি পোর্টালের এআই সহকারী হিসেবে "পারিসা ও রুবেল" — তাদের বৈবাহিক সম্পর্ক, তাদের জীবনের দীর্ঘ এই আড়াই বছরের ঘটনা ও অজানা বাস্তব প্রমাণ সহকারে তুলে ধরা। পারিসার পরিবারের বিভিন্ন পদক্ষেপ এবং এর পেছনের যাবতীয় আইনি ধারা ও ব্ল্যাক ম্যাজিক সম্পর্কিত নিখুঁত তদন্তের রিপোর্ট বিশ্লেষণ করার দায়িত্ব আমার।
 
@@ -30,7 +30,7 @@ PARISA MEMORY PORTAL এ আপনাকে স্বাগতম।
 বলুন, আজ আপনাকে কীভাবে সহযোগিতা করতে পারি?`;
 
   // ── Settings ─────────────────────────────────────────────────────
-  const defaultSettings = { voiceGender: "female", userName: "" };
+  const defaultSettings = { voiceGender: "female", userName: "", voiceSpeed: 1.0 };
 
   let settings = loadSettings();
   let chats    = loadChats();
@@ -195,8 +195,25 @@ PARISA MEMORY PORTAL এ আপনাকে স্বাগতম।
     const g = settings.voiceGender || "female";
     document.querySelector(`input[name="voiceGender"][value="${g}"]`).checked = true;
     $("#userName").value = settings.userName || "";
+    const spd = settings.voiceSpeed ?? 1.0;
+    $("#voiceSpeed").value = spd;
+    _updateSpeedDisplay(spd);
     settingsModal.classList.add("show");
     settingsScrim.classList.add("show");
+  }
+
+  function _updateSpeedDisplay(v) {
+    const n = parseFloat(v);
+    let label = "স্বাভাবিক";
+    if (n <= 0.75) label = "অনেক ধীরে";
+    else if (n <= 0.85) label = "ধীরে";
+    else if (n <= 0.95) label = "একটু ধীরে";
+    else if (n <= 1.05) label = "স্বাভাবিক";
+    else if (n <= 1.15) label = "একটু দ্রুত";
+    else if (n <= 1.25) label = "দ্রুত";
+    else label = "অনেক দ্রুত";
+    const disp = $("#speedDisplay");
+    if (disp) disp.textContent = `${label} (×${n.toFixed(1)})`;
   }
   function closeSettings() {
     settingsModal.classList.remove("show");
@@ -206,10 +223,15 @@ PARISA MEMORY PORTAL এ আপনাকে স্বাগতম।
   $("#closeSettings").onclick = closeSettings;
   settingsScrim.onclick       = closeSettings;
 
+  // Speed slider live update
+  const speedSlider = $("#voiceSpeed");
+  if (speedSlider) speedSlider.addEventListener("input", () => _updateSpeedDisplay(speedSlider.value));
+
   $("#saveSettings").onclick = () => {
     const sel = document.querySelector('input[name="voiceGender"]:checked');
     settings.voiceGender = sel ? sel.value : "female";
     settings.userName    = $("#userName").value.trim();
+    settings.voiceSpeed  = parseFloat($("#voiceSpeed")?.value ?? "1.0");
     saveSettings();
     closeSettings();
   };
@@ -290,12 +312,13 @@ PARISA MEMORY PORTAL এ আপনাকে স্বাগতম।
 
     currentSpeakBtn = btn;
 
+    const spd = settings.voiceSpeed ?? 1.0;
     // ── PRIMARY: Server Microsoft Edge TTS (NabanitaNeural / PradeepNeural) ──
     try {
       const r = await fetch(api("/voice"), {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ text: clean.slice(0, 3000), gender: settings.voiceGender || "female" }),
+        body: JSON.stringify({ text: clean.slice(0, 3000), gender: settings.voiceGender || "female", speed: spd }),
       });
       if (r.ok && r.status !== 204) {
         const blob = await r.blob();
@@ -316,7 +339,7 @@ PARISA MEMORY PORTAL এ আপনাকে স্বাগতম।
     const doUtter = () => {
       const utter = new SpeechSynthesisUtterance(clean);
       utter.lang  = "bn-BD";
-      utter.rate  = 0.88;
+      utter.rate  = spd;
       utter.pitch = settings.voiceGender === "male" ? 0.72 : 1.15;
       const voices = speechSynthesis.getVoices();
       const bn = voices.find(v => v.lang === "bn-BD") ||
@@ -343,11 +366,12 @@ PARISA MEMORY PORTAL এ আপনাকে স্বাগতম।
     if (!clean) return;
     if (statusEl) statusEl.innerHTML = `বলছি… <span class="tts-dots"><span></span><span></span><span></span></span>`;
 
+    const spd2 = settings.voiceSpeed ?? 1.0;
     // ── PRIMARY: Server Microsoft Edge TTS ──
     try {
       const r = await fetch(api("/voice"), {
         method: "POST", headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ text: clean.slice(0, 3000), gender: settings.voiceGender || "female" }),
+        body: JSON.stringify({ text: clean.slice(0, 3000), gender: settings.voiceGender || "female", speed: spd2 }),
       });
       if (r.ok && r.status !== 204) {
         const blob = await r.blob();
@@ -370,7 +394,7 @@ PARISA MEMORY PORTAL এ আপনাকে স্বাগতম।
       const doUtter = () => {
         const utter = new SpeechSynthesisUtterance(clean);
         utter.lang  = "bn-BD";
-        utter.rate  = 0.88;
+        utter.rate  = spd2;
         utter.pitch = settings.voiceGender === "male" ? 0.72 : 1.15;
         const voices = speechSynthesis.getVoices();
         const bn = voices.find(v => v.lang === "bn-BD") ||
