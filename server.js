@@ -678,11 +678,17 @@ async function logFirebase(data) {
 // ─── TTS helpers ──────────────────────────────────────────────────
 function cleanForTTS(text) {
   return text
-    .replace(/\*\*([^*]+)\*\*/g, "$1")   // **bold** → bold
-    .replace(/\*([^*]+)\*/g,     "$1")   // *italic* → italic
-    .replace(/`([^`]+)`/g,       "$1")   // `code` → code
-    .replace(/\[([^\]]+)\]\([^)]+\)/g, "$1") // [link](url) → link
-    .replace(/[*_`#~>\-]{1,}/g,  " ")   // leftover markdown symbols
+    .replace(/\[IMAGE:[^\]]*\]/g, "")         // [IMAGE:id] বাদ
+    .replace(/\*\*([^*]+)\*\*/g, "$1")        // **bold** → bold
+    .replace(/\*([^*]+)\*/g,     "$1")        // *italic* → italic
+    .replace(/`([^`]+)`/g,       "$1")        // `code` → code
+    .replace(/\[([^\]]+)\]\([^)]+\)/g, "$1") // [link](url) → link text
+    .replace(/#{1,6}\s*/g, "")               // headings
+    .replace(/[a-zA-Z0-9@#$%^&*(){}\[\]<>\/\\|+=~]+/g, " ") // English + symbols → বাদ (বানান পড়া বন্ধ)
+    .replace(/[\u{1F000}-\u{1FFFF}\u{2600}-\u{27BF}]/gu, "") // emoji বাদ
+    .replace(/[*_`#~>\-]{1,}/g,  " ")        // বাকি markdown চিহ্ন
+    .replace(/\n{2,}/g, "। ")               // paragraph break → দাঁড়ি
+    .replace(/\n/g, " ")
     .replace(/\s+/g, " ")
     .trim()
     .slice(0, 4000);
