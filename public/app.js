@@ -123,8 +123,9 @@ PARISA MEMORY PORTAL এ আপনাকে স্বাগতম।
   }
 
   function renderMarkdown(text) {
+    const imgBase = api("/image/");
     text = text.replace(/\[IMAGE:([A-Za-z0-9_\-]+)\]/g,
-      '<img src="/image/$1" class="drive-img" alt="স্ক্রিনশট" loading="lazy" onerror="this.style.display=\'none\'">');
+      `<img src="${imgBase}$1" class="drive-img" alt="স্ক্রিনশট" loading="lazy" onerror="this.style.display='none'">`);
     try {
       return DOMPurify.sanitize(
         marked.parse(text, { breaks: true, gfm: true }),
@@ -234,13 +235,16 @@ PARISA MEMORY PORTAL এ আপনাকে স্বাগতম।
     speak("আসসালামু ওয়ালাইকুম। পারিসা মেমোরি পোর্টালে আপনাকে স্বাগতম।");
   };
 
-  // ── Voice: Microsoft Edge TTS (server-side) ─────────────────────
+  // ── Voice System ─────────────────────────────────────────────────
   let currentAudio = null;
   let currentUtter = null;
+  let currentSpeakBtn = null;
 
   // Text পরিষ্কার করো — TTS-এর আগে
   function stripForTTS(str) {
     if (!str) return "";
+    // English শব্দ বাদ — Bengali TTS বানান করে পড়ে
+    str = str.replace(/[a-zA-Z]+/g, " ");
     // ইমোজি বাদ
     str = str.replace(/[\u{1F000}-\u{1FFFF}\u{2600}-\u{27BF}\u{FE00}-\u{FE0F}]/gu, "");
     // markdown বাদ
@@ -262,56 +266,110 @@ PARISA MEMORY PORTAL এ আপনাকে স্বাগতম।
     return str.replace(/\s+/g, " ").trim();
   }
 
-  async function speak(text, btn = null) {
-    if (!text || !text.trim()) return;
+  function _resetSpeakBtn(btn) {
+    if (btn) btn.innerHTML = `<svg class="ic"><use href="#i-volume"/></svg> ভয়েস`;
+  }
+
+  function _stopAll() {
     if (currentAudio) { currentAudio.pause(); currentAudio = null; }
     if (currentUtter) { speechSynthesis.cancel(); currentUtter = null; }
-    if (btn) btn.innerHTML = `<span class="tts-dots"><span></span><span></span><span></span></span>`;
+    if (currentSpeakBtn) { _resetSpeakBtn(currentSpeakBtn); currentSpeakBtn = null; }
+  }
+
+  // ── Browser Web Speech API দিয়ে speak ────────────────────────────
+  async function speak(text, btn = null) {
+    if (!text || !text.trim()) return;
+
+    const wasBtn = currentSpeakBtn;
+    _stopAll();
+    // একই বাটনে আবার click → toggle off
+    if (wasBtn && wasBtn === btn) return;
+
+    if (btn) btn.innerHTML = `<svg class="ic"><use href="#i-volume"/></svg> <span class="tts-dots"><span></span><span></span><span></span></span>`;
     const clean = stripForTTS(text);
-    if (!clean) { if (btn) btn.innerHTML = `<svg class="ic"><use href="#i-volume"/></svg> ভয়েস`; return; }
+    if (!clean) { _resetSpeakBtn(btn); return; }
+
+    currentSpeakBtn = btn;
+
+    // ── Browser speechSynthesis (primary) ──
+    if ("speechSynthesis" in window) {
+      const doUtter = () => {
+        const utter = new SpeechSynthesisUtterance(clean);
+        utter.lang  = "bn-BD";
+        utter.rate  = 0.88;
+        utter.pitch = settings.voiceGender === "male" ? 0.72 : 1.15;
+        const voices = speechSynthesis.getVoices();
+        const bn = voices.find(v => v.lang === "bn-BD") ||
+                   voices.find(v => v.lang === "bn-IN") ||
+                   voices.find(v => v.lang.startsWith("bn"));
+        if (bn) utter.voice = bn;
+        if (btn) btn.innerHTML = `<svg class="ic"><use href="#i-volume"/></svg> চলছে`;
+        utter.onend  = () => { currentUtter = null; currentSpeakBtn = null; _resetSpeakBtn(btn); };
+        utter.onerror = () => { currentUtter = null; currentSpeakBtn = null; _resetSpeakBtn(btn); };
+        currentUtter = utter;
+        speechSynthesis.speak(utter);
+      };
+      if (speechSynthesis.getVoices().length > 0) { doUtter(); }
+      else {
+        speechSynthesis.onvoiceschanged = () => { speechSynthesis.onvoiceschanged = null; doUtter(); };
+        setTimeout(doUtter, 250);
+      }
+      return;
+    }
+
+    // ── Server TTS fallback ──
     try {
       const r = await fetch(api("/voice"), {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ text: clean.slice(0, 3000), gender: settings.voiceGender || "female" }),
       });
-      if (!r.ok || r.status === 204) {
-        if (btn) btn.innerHTML = `<svg class="ic"><use href="#i-volume"/></svg> ভয়েস`;
-        return;
-      }
+      if (!r.ok || r.status === 204) { currentSpeakBtn = null; _resetSpeakBtn(btn); return; }
       const blob = await r.blob();
-      if (blob.size < 100) { if (btn) btn.innerHTML = `<svg class="ic"><use href="#i-volume"/></svg> ভয়েস`; return; }
+      if (blob.size < 100) { currentSpeakBtn = null; _resetSpeakBtn(btn); return; }
       const url = URL.createObjectURL(blob);
       currentAudio = new Audio(url);
       if (btn) btn.innerHTML = `<svg class="ic"><use href="#i-volume"/></svg> চলছে`;
-      currentAudio.onended = () => {
-        currentAudio = null; URL.revokeObjectURL(url);
-        if (btn) btn.innerHTML = `<svg class="ic"><use href="#i-volume"/></svg> ভয়েস`;
-      };
-      currentAudio.onerror = () => {
-        currentAudio = null; URL.revokeObjectURL(url);
-        if (btn) btn.innerHTML = `<svg class="ic"><use href="#i-volume"/></svg> ভয়েস`;
-      };
+      currentAudio.onended = () => { currentAudio = null; currentSpeakBtn = null; URL.revokeObjectURL(url); _resetSpeakBtn(btn); };
+      currentAudio.onerror = () => { currentAudio = null; currentSpeakBtn = null; URL.revokeObjectURL(url); _resetSpeakBtn(btn); };
       await currentAudio.play();
-    } catch {
-      if (btn) btn.innerHTML = `<svg class="ic"><use href="#i-volume"/></svg> ভয়েস`;
-    }
+    } catch { currentSpeakBtn = null; _resetSpeakBtn(btn); }
   }
 
   function speakAndWait(text, statusEl = null) {
-    return new Promise(async (resolve) => {
+    return new Promise((resolve) => {
       if (!text || !text.trim()) return resolve();
-      if (currentAudio) { currentAudio.pause(); currentAudio = null; }
-      if (currentUtter) { speechSynthesis.cancel(); currentUtter = null; }
+      _stopAll();
       const clean = stripForTTS(text);
       if (!clean) return resolve();
       if (statusEl) statusEl.innerHTML = `বলছি… <span class="tts-dots"><span></span><span></span><span></span></span>`;
-      try {
-        const r = await fetch(api("/voice"), {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ text: clean.slice(0, 3000), gender: settings.voiceGender || "female" }),
-        });
+
+      if ("speechSynthesis" in window) {
+        const doUtter = () => {
+          const utter = new SpeechSynthesisUtterance(clean);
+          utter.lang  = "bn-BD";
+          utter.rate  = 0.88;
+          utter.pitch = settings.voiceGender === "male" ? 0.72 : 1.15;
+          const voices = speechSynthesis.getVoices();
+          const bn = voices.find(v => v.lang === "bn-BD") ||
+                     voices.find(v => v.lang === "bn-IN") ||
+                     voices.find(v => v.lang.startsWith("bn"));
+          if (bn) utter.voice = bn;
+          utter.onend  = () => { currentUtter = null; resolve(); };
+          utter.onerror = () => { currentUtter = null; resolve(); };
+          currentUtter = utter;
+          speechSynthesis.speak(utter);
+        };
+        if (speechSynthesis.getVoices().length > 0) { doUtter(); }
+        else { speechSynthesis.onvoiceschanged = () => { speechSynthesis.onvoiceschanged = null; doUtter(); }; setTimeout(doUtter, 250); }
+        return;
+      }
+
+      // Server fallback
+      fetch(api("/voice"), {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ text: clean.slice(0, 3000), gender: settings.voiceGender || "female" }),
+      }).then(async r => {
         if (!r.ok || r.status === 204) return resolve();
         const blob = await r.blob();
         if (blob.size < 100) return resolve();
@@ -319,8 +377,8 @@ PARISA MEMORY PORTAL এ আপনাকে স্বাগতম।
         currentAudio = new Audio(url);
         currentAudio.onended = () => { currentAudio = null; URL.revokeObjectURL(url); resolve(); };
         currentAudio.onerror = () => { currentAudio = null; URL.revokeObjectURL(url); resolve(); };
-        await currentAudio.play();
-      } catch { resolve(); }
+        currentAudio.play();
+      }).catch(() => resolve());
     });
   }
 
