@@ -1,4 +1,4 @@
-const CACHE = "parisa-v7";
+const CACHE = "parisa-v5";
 const STATIC = ["/", "/index.html", "/style.css", "/app.js", "/manifest.json", "/logo.jpg"];
 
 self.addEventListener("install", (e) => {
@@ -16,14 +16,19 @@ self.addEventListener("activate", (e) => {
 
 self.addEventListener("fetch", (e) => {
   const url = new URL(e.request.url);
-  // API calls — always network
-  if (url.pathname.startsWith("/api/")) return;
+  if (url.pathname.startsWith("/api/") ||
+      url.pathname.startsWith("/chat") ||
+      url.pathname.startsWith("/voice") ||
+      url.pathname.startsWith("/analyze") ||
+      url.pathname.startsWith("/log") ||
+      url.pathname.startsWith("/drive") ||
+      url.pathname.startsWith("/image") ||
+      url.pathname.startsWith("/refresh-drive")) return;
   e.respondWith(
     caches.match(e.request).then((cached) => cached || fetch(e.request).catch(() => cached))
   );
 });
 
-// Push notifications — no URL shown
 self.addEventListener("push", (e) => {
   const data = e.data ? e.data.json() : {};
   e.waitUntil(
