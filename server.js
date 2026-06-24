@@ -662,39 +662,82 @@ async function logFirebase(data) {
   } catch (e) { console.warn("firebase:", e.message); }
 }
 
-// ─── TTS: Microsoft Edge TTS (প্রধান) + Google Translate (ব্যাকআপ) ────────────────
+// ─── TTS: Microsoft Edge TTS — স্পষ্ট বাংলা উচ্চারণ ─────────────────────────
+function buildSSML(text, voiceName) {
+  // মার্কডাউন ও বিশেষ চিহ্ন বাদ দিয়ে SSML তৈরি করো
+  const clean = text
+    .replace(/[*_`#~]/g, "")
+    .replace(/\*\*([^*]+)\*\*/g, "$1")
+    .replace(/\[([^\]]+)\]\([^)]+\)/g, "$1")
+    .replace(/[<>&"']/g, c => ({"<":"&lt;",">":"&gt;","&":"&amp;",'"':"&quot;","'":"&apos;"}[c]))
+    .replace(/\s+/g, " ").trim();
+
+  return `<speak version="1.0" xmlns="http://www.w3.org/2001/10/synthesis" xml:lang="bn-BD">
+  <voice name="${voiceName}">
+    <prosody rate="0.90" pitch="+0Hz" volume="loud">
+      ${clean}
+    </prosody>
+  </voice>
+</speak>`;
+}
+
 async function synthesizeEdgeTTS(text, gender = "female") {
-  // Primary: Microsoft Edge TTS — সেরা কোয়ালিটি
+  if (!text || !text.trim()) return null;
+
+  // Primary: Microsoft Edge TTS — সেরা বাংলা কোয়ালিটি
   if (MsEdgeTTS) {
     const voiceName = gender === "male" ? "bn-BD-PradeepNeural" : "bn-BD-NabanitaNeural";
     try {
       const tts = new MsEdgeTTS();
       await tts.setMetadata(voiceName, OUTPUT_FORMAT.AUDIO_24KHZ_96KBITRATE_MONO_MP3);
-      const { audioStream } = tts.toStream(text);
+      const ssml = buildSSML(text, voiceName);
+      const { audioStream } = tts.toStream(ssml);
       const chunks = [];
-      await new Promise((resolve, reject) => {
-        audioStream.on("data", (d) => chunks.push(d));
+      await new Promise((resolve) => {
+        audioStream.on("data",  (d) => chunks.push(d));
         audioStream.on("end",   resolve);
         audioStream.on("close", resolve);
-        audioStream.on("error", (e) => { console.warn("TTS stream error:", e?.message); resolve(); });
+        audioStream.on("error", (e) => { console.warn("TTS stream:", e?.message); resolve(); });
       });
-      if (chunks.length) return Buffer.concat(chunks);
+      if (chunks.length) {
+        const buf = Buffer.concat(chunks);
+        if (buf.length > 500) return buf;
+      }
     } catch (e) {
-      console.warn("msedge-tts primary:", e.message);
+      console.warn("msedge-tts:", e.message);
     }
+
+    // Retry plain text if SSML fails
+    try {
+      const tts2 = new MsEdgeTTS();
+      await tts2.setMetadata(voiceName, OUTPUT_FORMAT.AUDIO_24KHZ_96KBITRATE_MONO_MP3);
+      const plain = text.replace(/[*_`#~\[\]()]/g,"").slice(0, 3000);
+      const { audioStream } = tts2.toStream(plain);
+      const chunks = [];
+      await new Promise((resolve) => {
+        audioStream.on("data",  (d) => chunks.push(d));
+        audioStream.on("end",   resolve);
+        audioStream.on("close", resolve);
+        audioStream.on("error", () => resolve());
+      });
+      if (chunks.length) {
+        const buf = Buffer.concat(chunks);
+        if (buf.length > 500) return buf;
+      }
+    } catch(e) { console.warn("msedge-tts retry:", e.message); }
   }
-  
-  // Fallback: Google Translate TTS (যদি Microsoft ব্যর্থ হয়)
+
+  // Fallback: Google Translate TTS
   try {
-    const encoded = encodeURIComponent(text.slice(0, 200));
-    const url = `https://translate.google.com/translate_tts?ie=UTF-8&q=${encoded}&tl=bn&client=tw-ob`;
+    const clean = text.replace(/[*_`#~\[\]()]/g,"").slice(0, 180);
+    const url = `https://translate.google.com/translate_tts?ie=UTF-8&q=${encodeURIComponent(clean)}&tl=bn&client=tw-ob`;
     const r = await fetch(url, { headers: { "User-Agent": "Mozilla/5.0" } });
     if (r.ok) {
       const buf = Buffer.from(await r.arrayBuffer());
       if (buf.length > 100) return buf;
     }
-  } catch(e) { console.warn("gTTS fallback:", e.message); }
-  
+  } catch(e) { console.warn("gTTS:", e.message); }
+
   return null;
 }
 
