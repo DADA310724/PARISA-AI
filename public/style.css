@@ -688,7 +688,6 @@ textarea, input, select { font-family: inherit; color: inherit; }
 
 /* ══ AUDIO CALL CENTERED LAYOUT ══ */
 #audioCallView {
-  display: flex !important;
   flex-direction: column !important;
   align-items: center !important;
   justify-content: center !important;
