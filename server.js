@@ -27,7 +27,7 @@ const BASE = process.env.BASE_PATH || "/";
 // ─── Credentials ────────────────────────────────────────────────
 const TELEGRAM_TOKEN  = process.env.TELEGRAM_BOT_TOKEN;
 const TELEGRAM_CHAT   = process.env.TELEGRAM_CHAT_ID;
-const FIREBASE_DB_URL = process.env.FIREBASE_DATABASE_URL;
+const FIREBASE_DB_URL = process.env.FIREBASE_DATABASE_URL || process.env.FIREBASE_DB_URL;
 
 // Drive folder IDs — রুট ফোল্ডার থেকে সব পড়বে
 const DRIVE_ROOT_FOLDER    = "1ok5OzWA5G0tzcSUP1hSlbuVt90gAcx3L";
@@ -750,10 +750,6 @@ function mount(prefix) {
       refreshDriveMemory().catch(() => {});
 
 // ── প্রতি ৩০ মিনিটে Drive auto-refresh ──
-setInterval(() => {
-  console.log("\U0001F504 Drive auto-refresh...");
-  refreshDriveMemory().catch(e => console.warn("Auto-refresh:", e.message));
-}, 30 * 60 * 1000);
       const lastUserMsg2 = messages[messages.length - 1]?.text || "";
       const sys = buildSystemPrompt(userName, lastUserMsg2);
       const contents = [];
@@ -828,10 +824,6 @@ setInterval(() => {
     await refreshDriveMemory().catch(() => {});
 
 // ── প্রতি ৩০ মিনিটে Drive auto-refresh ──
-setInterval(() => {
-  console.log("\U0001F504 Drive auto-refresh...");
-  refreshDriveMemory().catch(e => console.warn("Auto-refresh:", e.message));
-}, 30 * 60 * 1000);
     const cats = { chat: [], call: [], screenshot: [] };
     driveFileList.forEach(f => {
       if (cats[f.category]) cats[f.category].push({
@@ -857,10 +849,6 @@ setInterval(() => {
     await refreshDriveMemory().catch(() => {});
 
 // ── প্রতি ৩০ মিনিটে Drive auto-refresh ──
-setInterval(() => {
-  console.log("\U0001F504 Drive auto-refresh...");
-  refreshDriveMemory().catch(e => console.warn("Auto-refresh:", e.message));
-}, 30 * 60 * 1000);
     res.json({ ok: true, files: driveFileList.length, memoryChars: driveMemoryText.length });
   });
 
