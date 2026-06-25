@@ -255,7 +255,12 @@ PARISA MEMORY PORTAL এ আপনাকে স্বাগতম।
   };
 
   $("#testVoice").onclick = () => {
+    const sel = document.querySelector('input[name="voiceGender"]:checked');
+    const testGender = sel ? sel.value : (settings.voiceGender || "female");
+    const prevGender = settings.voiceGender;
+    settings.voiceGender = testGender;
     speak("আসসালামু ওয়ালাইকুম। পারিসা মেমোরি পোর্টালে আপনাকে স্বাগতম।");
+    settings.voiceGender = prevGender;
   };
 
   // ── Voice System ─────────────────────────────────────────────────
@@ -266,8 +271,7 @@ PARISA MEMORY PORTAL এ আপনাকে স্বাগতম।
   // Text পরিষ্কার করো — TTS-এর আগে
   function stripForTTS(str) {
     if (!str) return "";
-    // English শব্দ বাদ — Bengali TTS বানান করে পড়ে
-    str = str.replace(/[a-zA-Z]+/g, " ");
+    // English শব্দ — Microsoft TTS নিজেই পড়তে পারে, তাই রাখছি (বানান করবে না)
     // ইমোজি বাদ
     str = str.replace(/[\u{1F000}-\u{1FFFF}\u{2600}-\u{27BF}\u{FE00}-\u{FE0F}]/gu, "");
     // markdown বাদ
@@ -701,6 +705,8 @@ PARISA MEMORY PORTAL এ আপনাকে স্বাগতম।
     callRecognizer = makeRecognizer();
     if (!callRecognizer) return;
     let finalText = "";
+    // User কথা শুরু করলে AI এর audio বন্ধ করো
+    callRecognizer.onstart = () => { _stopAll(); };
     callRecognizer.onresult = (e) => {
       for (let i = e.resultIndex; i < e.results.length; i++) if (e.results[i].isFinal) finalText += e.results[i][0].transcript;
       $("#audioCallCaption").textContent = finalText;
@@ -778,6 +784,8 @@ PARISA MEMORY PORTAL এ আপনাকে স্বাগতম।
     vcRecognizer = makeRecognizer();
     if (!vcRecognizer) return;
     let finalText = "";
+    // User কথা শুরু করলে AI এর audio বন্ধ করো
+    vcRecognizer.onstart = () => { _stopAll(); };
     vcRecognizer.onresult = (e) => { for (let i = e.resultIndex; i < e.results.length; i++) if (e.results[i].isFinal) finalText += e.results[i][0].transcript; $("#videoCallCaption").textContent = finalText; };
     vcRecognizer.onerror = () => { if (vcOn) setTimeout(videoCallLoop, 600); };
     vcRecognizer.onend = async () => {
@@ -807,15 +815,9 @@ PARISA MEMORY PORTAL এ আপনাকে স্বাগতম।
   function showWelcomeIfFirst() {
     if (localStorage.getItem(LS_WELCOMED)) return;
     localStorage.setItem(LS_WELCOMED, "1");
-    if (!getActive()) newChat();
-    const c = getActive();
-    const welcomeMsg = { role: "assistant", text: WELCOME_TEXT };
-    c.messages.push(welcomeMsg);
-    c.updatedAt = Date.now();
-    persistChats();
-    renderChat();
-    // Auto-play short intro after 1.5s
-    setTimeout(() => speak("আসসালামু ওয়ালাইকুম। পারিসা মেমোরি পোর্টালে আপনাকে স্বাগতম।"), 1500);
+    // প্রথমবার শুধু হোমপেজ দেখাও — chat-এ message যোগ করো না
+    // #welcome div স্বয়ংক্রিয়ভাবে দেখা যাবে (কোনো message নেই বলে)
+    setTimeout(() => speak("আস্সালামু ওয়ালাইকুম। পারিসা মেমোরি পোর্টালে আপনাকে স্বাগতম।"), 1800);
   }
 
   // ── PWA service worker ────────────────────────────────────────────
