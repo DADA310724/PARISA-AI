@@ -242,15 +242,16 @@ PARISA MEMORY PORTAL এ আপনাকে স্বাগতম।
       openSettings();
     }
   };
-  $("#refreshDrive").onclick = async () => {
+  const refreshDriveBtn = $("#refreshDrive");
+  if (refreshDriveBtn) refreshDriveBtn.onclick = async () => {
     const el = $("#refreshStatus");
-    el.textContent = "আপডেট হচ্ছে...";
+    if (el) el.textContent = "আপডেট হচ্ছে...";
     try {
       const r = await fetch(api("/refresh-drive"), { method: "POST" });
       const d = await r.json();
-      el.textContent = d.ok ? "✅ আপডেট হয়েছে" : "❌ সমস্যা হয়েছে";
-    } catch { el.textContent = "❌ সংযোগ সমস্যা"; }
-    setTimeout(() => el.textContent = "", 3000);
+      if (el) el.textContent = d.ok ? "✅ আপডেট হয়েছে" : "❌ সমস্যা হয়েছে";
+    } catch { if (el) el.textContent = "❌ সংযোগ সমস্যা"; }
+    setTimeout(() => { if (el) el.textContent = ""; }, 3000);
   };
 
   $("#testVoice").onclick = () => {
