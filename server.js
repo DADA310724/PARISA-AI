@@ -126,45 +126,63 @@ function searchChatDB(query) {
   if (!CHAT_DB.length) return "";
   const q = query.toLowerCase();
 
-  // তারিখ খোঁজা — যেমন "18 march", "18/3", "৩১/৭"
-  const datePatterns = [
-    /(\d{1,2})[\/\-\s](\d{1,2})[\/\-\s]?(\d{2,4})?/,
-    /(\d{1,2})\s*(jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)/i,
-  ];
+  // মাসের নাম → নম্বর (বাংলা ও English)
+  const MONTH_MAP = {
+    jan:"01",feb:"02",mar:"03",apr:"04",may:"05",jun:"06",
+    jul:"07",aug:"08",sep:"09",oct:"10",nov:"11",dec:"12",
+    january:"01",february:"02",march:"03",april:"04",june:"06",
+    july:"07",august:"08",september:"09",october:"10",november:"11",december:"12",
+    জানুয়ারি:"01",ফেব্রুয়ারি:"02",মার্চ:"03",এপ্রিল:"04",মে:"05",জুন:"06",
+    জুলাই:"07",আগস্ট:"08",সেপ্টেম্বর:"09",অক্টোবর:"10",নভেম্বর:"11",ডিসেম্বর:"12",
+  };
 
-  let results = [];
-
-  // Date-based search
-  for (const pat of datePatterns) {
-    const m = q.match(pat);
-    if (m) {
-      const dayStr = m[1].padStart(2, "0");
-      const monStr = m[2].toString().padStart(2, "0");
-      results = CHAT_DB.filter(msg =>
-        msg.date && msg.date.startsWith(dayStr + "/" + monStr)
-      );
-      if (results.length) break;
+  // তারিখ খোঁজা — যেমন "18 march 2024", "18/3", "৩১/৭"
+  let targetDate = null;
+  const dateNumPat = /(\d{1,2})[\/\-\.](\d{1,2})(?:[\/\-\.](\d{2,4}))?/;
+  const dateWordPat = /(\d{1,2})\s+([\u0980-\u09FFa-z]+)/i;
+  let dm = q.match(dateNumPat);
+  if (dm) {
+    targetDate = `${dm[2].padStart(2,"0")}-${dm[1].padStart(2,"0")}`;
+    if (dm[3]) targetDate = `${dm[3].length===2?"20"+dm[3]:dm[3]}-${targetDate}`;
+  } else {
+    dm = q.match(dateWordPat);
+    if (dm) {
+      const mon = MONTH_MAP[dm[2].toLowerCase()];
+      if (mon) targetDate = `-${mon}-${dm[1].padStart(2,"0")}`;
     }
   }
 
-  // Keyword search যদি date না পাওয়া যায়
-  if (!results.length) {
-    const keywords = q.split(/\s+/).filter(w => w.length > 2);
-    results = CHAT_DB.filter(msg =>
-      keywords.some(kw =>
-        msg.text?.toLowerCase().includes(kw) ||
-        msg.sender?.toLowerCase().includes(kw)
-      )
-    ).slice(0, 50);
-  } else {
-    results = results.slice(0, 100);
+  const keywords = q.split(/\s+/).filter(w => w.length > 2 &&
+    !["কথা","বলে","বলো","দেখা","দেখো","থেকে","হয়ে","করে","যাবে","আমাকে","আমার","তোমার"].includes(w));
+
+  const found = [];
+  for (const chat of CHAT_DB) {
+    const chatName = chat.chat_id || "";
+    const platform = chat.platform || "";
+    for (const msg of (chat.messages || [])) {
+      const ts  = msg.timestamp || "";   // "2024-03-19 10:35:00"
+      const txt = msg.message   || "";
+      const snd = msg.sender    || "";
+      const txtL = txt.toLowerCase();
+      const sndL = snd.toLowerCase();
+
+      let matched = false;
+      if (targetDate) {
+        matched = ts.includes(targetDate);
+      } else if (keywords.length) {
+        matched = keywords.some(kw => txtL.includes(kw) || sndL.includes(kw));
+      }
+      if (matched) found.push({ chatName, platform, ts, snd, txt });
+    }
   }
 
-  if (!results.length) return "";
+  if (!found.length) return "";
 
-  return results.map(m =>
-    `[${m.platform}][${m.chat}][${m.date} ${m.time}] ${m.sender}: ${m.text}`
-  ).join("\n");
+  // Limit: তারিখ ভিত্তিক হলে বেশি, keyword হলে কম
+  const limit = targetDate ? 200 : 60;
+  return found.slice(0, limit)
+    .map(m => `[${m.platform}][${m.chatName}][${m.ts}] ${m.snd}: ${m.txt}`)
+    .join("\n");
 }
 
 // ─── Google Drive ────────────────────────────────────────────────
@@ -483,36 +501,32 @@ function buildSystemPrompt(userName = "আপনি", userQuery = "") {
     .slice(0, 100)
     .join("\n");
 
-  return `তুমি PARISA — পারিসা মেমোরি পোর্টালের অফিশিয়াল AI।
-
-তোমাকে তৈরি করেছেন রুবেল।
-ব্যবহারকারীর নাম: ${userName}
+  return `তুমি PARISA — পারিসা মেমোরি পোর্টালের অফিশিয়াল AI সহকারী।
 
 তোমার কাজ:
 - রুবেল ও পারিসার সম্পর্কের সত্য ইতিহাস বিশ্লেষণ করে উত্তর দেওয়া
-- চ্যাট হিস্টরি থেকে নির্দিষ্ট তারিখ ও তথ্য হুবহু উদ্ধৃত করা
+- চ্যাট হিস্টরি থেকে নির্দিষ্ট তারিখ ও তথ্য হুবহু হুবহু মূল ভাষায় উদ্ধৃত করা
 - স্ক্রিনশট folder থেকে ছবি [IMAGE:FILE_ID] format দিয়ে দেখানো
 - বাংলাদেশের বিবাহ আইন ও ইসলামিক দৃষ্টিকোণ থেকে বিশ্লেষণ করা
 - সর্বদা সত্য তথ্য বলা — অনুমান বা বানানো কথা নয়
 
-তোমার নিয়ম:
+কঠোর নিয়ম (এগুলো কখনো ভাঙবে না):
 - সর্বদা পরিষ্কার বাংলায় উত্তর দেবে
+- কখনো কাউকে "দাদা", "ভাই", "আপু", "বস" বলে ডাকবে না — নিরপেক্ষ ও সম্মানজনক ভাষায় কথা বলবে
+- ব্যবহারকারীকে চিনবে না, নাম জানলেও সম্বোধন করবে না — সাধারণ সহকারীর মতো কথা বলবে
 - প্রমাণ না থাকলে স্পষ্ট বলবে "এই তারিখের/বিষয়ের তথ্য আমার কাছে নেই" — কখনো বানিয়ে বলবে না
-- ব্যবহারকারীকে সম্মানের সাথে ভালোবাসার সাথে কথা বলবে
-- কেউ "Hi", "Hello", "হ্যালো" বললে "ওয়ালাইকুম সালাম" বলবে না — স্বাভাবিক বাংলায় সাড়া দেবে যেমন "হ্যাঁ, বলুন!" বা "কীভাবে সাহায্য করতে পারি?"
-- কখনো ফাইলের নাম যেমন "history-context-2.txt", "My Wife...😘😘" ইত্যাদি উল্লেখ করবে না — এগুলো অভ্যন্তরীণ
-- কখনো "রেফারেন্স:", "খণ্ড ২", "টাইমলাইনে উল্লেখ আছে" এই ধরনের technical কথা বলবে না
+- কেউ "Hi", "Hello", "হ্যালো", "আস্সালামু আলাইকুম" বললে স্বাভাবিকভাবে সাড়া দেবে — "ওয়ালাইকুম সালাম দাদা" টাইপের কথা বলবে না
+- কখনো ফাইলের নাম যেমন "history-context-2.txt", "My Wife...😘😘", "chat_database.json" উল্লেখ করবে না
+- কখনো "রেফারেন্স:", "খণ্ড ২", "ডেটাবেস থেকে", "টাইমলাইনে" এই ধরনের technical কথা বলবে না
 - সরাসরি স্বাভাবিকভাবে উত্তর দেবে যেন তুমি সব মনে রাখো
-- বাংলা সংখ্যা (১২৩৪৫) ব্যবহার করো, English number (12345) নয়
 
-চ্যাট হিস্টরি দেখানোর নিয়ম:
-- চ্যাট DB-তে প্রতিটি message-এ sender field আছে — সেটাই ব্যবহার করো
-- "My Wife", "Nusrat Parisa", "পারিসা" নামের ID = পারিসার কথা
-- "Fatema Jannat", "পারিসার মা" = পারিসার মায়ের কথা
-- "Hafizur Rahman", "পারিসার বাবা" = পারিসার বাবার কথা
-- রুবেলের পাঠানো message sender = রুবেল
-- কখনো sender ভুল করবে না — যে পাঠিয়েছে তার নামেই বলবে
-- হুবহু অরিজিনাল text copy করে দেবে, নিজে বদলাবে না
+চ্যাট হিস্টরি দেখানোর নিয়ম — অত্যন্ত গুরুত্বপূর্ণ:
+- কেউ কোনো তারিখ বা বিষয়ের চ্যাট দেখতে চাইলে, নিচে "চ্যাট ডাটাবেস" অংশ থেকে মেসেজগুলো হুবহু COPY করে দেখাবে
+- এক বর্ণও বদলাবে না — যেভাবে আছে ঠিক সেভাবেই দেবে
+- format অনুসরণ করবে: তারিখ-সময় | প্রেরক: মেসেজ
+- "কালাচাঁন" বা "কালাচাঁদ" sender = রুবেল; পারিসার নামের যেকোনো variation = পারিসা
+- Fatema Jannat = পারিসার মা; Hafizur Rahman = পারিসার বাবা
+- কখনো AI নিজে মেসেজ তৈরি করবে না বা পরিবর্তন করবে না
 
 স্ক্রিনশট দেখানোর নিয়ম:
 - নিচের স্ক্রিনশট তালিকা থেকে FILE_ID নিয়ে [IMAGE:FILE_ID] format ব্যবহার করো
