@@ -5,7 +5,6 @@ node_modules/
 *.log
 npm-debug.log*
 pnpm-debug.log*
-chat_database.json
 .DS_Store
 Thumbs.db
 dist/
