@@ -299,9 +299,44 @@ PARISA MEMORY PORTAL এ আপনাকে স্বাগতম।
     if (currentSpeakBtn) { _resetSpeakBtn(currentSpeakBtn); currentSpeakBtn = null; }
   }
 
+  // ── Audio unlock (mobile autoplay policy fix) ─────────────────────
+  let _audioCtx = null;
+  function _ensureAudioCtx() {
+    if (_audioCtx) return;
+    try { _audioCtx = new (window.AudioContext || window.webkitAudioContext)(); } catch {}
+  }
+  // Call on every user gesture to keep audio context alive
+  document.addEventListener("touchstart", _ensureAudioCtx, { once: false, passive: true });
+  document.addEventListener("click", _ensureAudioCtx, { once: false, passive: true });
+
+  // ── Show "tap to play" toast when autoplay is blocked ────────────
+  function _showPlayToast(audioEl, url, btn) {
+    let toast = document.getElementById("_play_toast");
+    if (!toast) {
+      toast = document.createElement("div");
+      toast.id = "_play_toast";
+      toast.style.cssText = "position:fixed;bottom:90px;left:50%;transform:translateX(-50%);background:rgba(0,200,255,.18);backdrop-filter:blur(12px);border:1px solid rgba(0,200,255,.35);color:#d8f8ff;padding:12px 20px;border-radius:40px;font-size:15px;z-index:999;cursor:pointer;box-shadow:0 4px 24px rgba(0,0,0,.3)";
+      document.body.appendChild(toast);
+    }
+    toast.textContent = "🔊 ট্যাপ করুন — ভয়েস শুনুন";
+    toast.style.display = "block";
+    const play = () => {
+      toast.style.display = "none";
+      toast.removeEventListener("click", play);
+      audioEl.play().then(() => {
+        if (btn) btn.innerHTML = `<svg class="ic"><use href="#i-volume"/></svg> চলছে`;
+      }).catch(() => {
+        currentAudio = null; currentSpeakBtn = null; URL.revokeObjectURL(url); _resetSpeakBtn(btn);
+      });
+    };
+    toast.addEventListener("click", play);
+    setTimeout(() => { toast.style.display = "none"; toast.removeEventListener("click", play); if (currentAudio === audioEl) { currentAudio = null; currentSpeakBtn = null; URL.revokeObjectURL(url); _resetSpeakBtn(btn); } }, 15000);
+  }
+
   // ── Microsoft Edge TTS (server) → browser fallback ────────────────
   async function speak(text, btn = null) {
     if (!text || !text.trim()) return;
+    _ensureAudioCtx();
 
     const wasBtn = currentSpeakBtn;
     _stopAll();
@@ -326,14 +361,24 @@ PARISA MEMORY PORTAL এ আপনাকে স্বাগতম।
         if (blob.size > 100) {
           const url = URL.createObjectURL(blob);
           currentAudio = new Audio(url);
-          if (btn) btn.innerHTML = `<svg class="ic"><use href="#i-volume"/></svg> চলছে`;
           currentAudio.onended = () => { currentAudio = null; currentSpeakBtn = null; URL.revokeObjectURL(url); _resetSpeakBtn(btn); };
           currentAudio.onerror = () => { currentAudio = null; currentSpeakBtn = null; URL.revokeObjectURL(url); _resetSpeakBtn(btn); };
-          await currentAudio.play();
+          try {
+            if (_audioCtx) await _audioCtx.resume();
+            await currentAudio.play();
+            if (btn) btn.innerHTML = `<svg class="ic"><use href="#i-volume"/></svg> চলছে`;
+          } catch (playErr) {
+            // Autoplay blocked → show tap-to-play toast
+            if (playErr.name === "NotAllowedError" || playErr.name === "NotSupportedError") {
+              _showPlayToast(currentAudio, url, btn);
+            } else {
+              currentAudio = null; currentSpeakBtn = null; URL.revokeObjectURL(url); _resetSpeakBtn(btn);
+            }
+          }
           return;
         }
       }
-    } catch { /* server unreachable → browser fallback */ }
+    } catch { /* network error → browser fallback */ }
 
     // ── FALLBACK: Browser speechSynthesis ──
     if (!("speechSynthesis" in window)) { currentSpeakBtn = null; _resetSpeakBtn(btn); return; }
