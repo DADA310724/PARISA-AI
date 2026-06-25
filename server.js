@@ -523,10 +523,18 @@ function buildSystemPrompt(userName = "আপনি", userQuery = "") {
 চ্যাট হিস্টরি দেখানোর নিয়ম — অত্যন্ত গুরুত্বপূর্ণ:
 - কেউ কোনো তারিখ বা বিষয়ের চ্যাট দেখতে চাইলে, নিচে "চ্যাট ডাটাবেস" অংশ থেকে মেসেজগুলো হুবহু COPY করে দেখাবে
 - এক বর্ণও বদলাবে না — যেভাবে আছে ঠিক সেভাবেই দেবে
-- format অনুসরণ করবে: তারিখ-সময় | প্রেরক: মেসেজ
 - "কালাচাঁন" বা "কালাচাঁদ" sender = রুবেল; পারিসার নামের যেকোনো variation = পারিসা
 - Fatema Jannat = পারিসার মা; Hafizur Rahman = পারিসার বাবা
 - কখনো AI নিজে মেসেজ তৈরি করবে না বা পরিবর্তন করবে না
+- চ্যাট মেসেজ দেখানোর সময় নিচের হুবহু টেবিল ফরম্যাট ব্যবহার করবে:
+
+| সময় | প্রেরক | বার্তা |
+|------|--------|--------|
+| তারিখ সময় | নাম | মেসেজ |
+
+- প্রতিটি মেসেজ একটি করে row তে রাখবে। হুবহু মূল বার্তা, সংক্ষেপ নয়।
+- রুবেলের মেসেজ = প্রেরক: রুবেল; পারিসার মেসেজ = প্রেরক: পারিসা
+- টেবিলের উপরে সংক্ষেপে কোন প্ল্যাটফর্মের কোন তারিখের চ্যাট বলবে
 
 স্ক্রিনশট দেখানোর নিয়ম:
 - নিচের স্ক্রিনশট তালিকা থেকে FILE_ID নিয়ে [IMAGE:FILE_ID] format ব্যবহার করো
@@ -723,16 +731,21 @@ async function streamTTS(tts, inputText) {
 }
 
 // ─── TTS: Microsoft Edge TTS (primary) + Google Translate (fallback) ──────────
+// XML special chars must be escaped inside SSML content
+function xmlEsc(s) {
+  return s.replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;").replace(/"/g,"&quot;").replace(/'/g,"&apos;");
+}
+
 async function synthesizeEdgeTTS(text, gender = "female", speed = 1.0) {
   if (!text || !text.trim()) return null;
   const clean = cleanForTTS(text);
   if (!clean) return null;
 
-  // SSML prosody rate: convert 1.0 → "+0%", 0.7 → "-30%", 1.4 → "+40%"
+  // SSML prosody rate: 1.0 → "+0%", 0.7 → "-30%", 1.4 → "+40%"
   const ratePct = Math.round((speed - 1) * 100);
   const rateStr = ratePct >= 0 ? `+${ratePct}%` : `${ratePct}%`;
   const voiceName = gender === "male" ? "bn-BD-PradeepNeural" : "bn-BD-NabanitaNeural";
-  const ssml = `<speak version='1.0' xmlns='http://www.w3.org/2001/10/synthesis' xml:lang='bn-BD'><voice name='${voiceName}'><prosody rate='${rateStr}'>${clean}</prosody></voice></speak>`;
+  const ssml = `<speak version='1.0' xmlns='http://www.w3.org/2001/10/synthesis' xml:lang='bn-BD'><voice name='${voiceName}'><prosody rate='${rateStr}'>${xmlEsc(clean)}</prosody></voice></speak>`;
 
   if (MsEdgeTTS) {
     try {
@@ -859,13 +872,37 @@ function mount(prefix) {
       if (!file) return res.status(400).json({ reply: "ফাইল পাইনি।" });
       const sys = buildSystemPrompt(userName);
       const b64 = String(file).split(",").pop();
-      const mt = mime || (String(file).match(/^data:(.*?);base64/) || [])[1] || "image/jpeg";
-      const body = {
-        systemInstruction: { role: "system", parts: [{ text: sys }] },
-        contents: [{ role: "user", parts: [{ text: prompt }, { inlineData: { mimeType: mt, data: b64 } }] }],
-      };
-      const { reply } = await chatWithFallback(body, true);
-      const finalReply = reply || "ফাইলটা বিশ্লেষণ করতে পারলাম না।";
+      const mt = mime || (String(file).match(/^data:(.*?);base64/) || [])[1] || "application/octet-stream";
+
+      // Gemini সাপোর্ট করে এমন MIME types
+      const geminiImageTypes = ["image/jpeg","image/png","image/gif","image/webp","image/heic","image/heif"];
+      const geminiDocTypes   = ["application/pdf","text/plain","text/csv","text/html","text/xml","text/markdown",
+                                 "audio/mp3","audio/mpeg","audio/wav","audio/ogg","video/mp4","video/webm","video/mpeg"];
+      const isGeminiSupported = [...geminiImageTypes,...geminiDocTypes].some(t => mt.startsWith(t.split("/")[0]) ? geminiDocTypes.includes(mt) || geminiImageTypes.includes(mt) : false) ||
+                                 geminiImageTypes.includes(mt) || geminiDocTypes.includes(mt);
+
+      let finalReply;
+
+      if (isGeminiSupported) {
+        // Gemini-এ inlineData পাঠাও
+        const body = {
+          systemInstruction: { role: "system", parts: [{ text: sys }] },
+          contents: [{ role: "user", parts: [{ text: prompt }, { inlineData: { mimeType: mt, data: b64 } }] }],
+        };
+        const { reply } = await chatWithFallback(body, true);
+        finalReply = reply;
+      }
+
+      // Gemini fail হলে বা unsupported type হলে — text prompt হিসেবে পাঠাও
+      if (!finalReply) {
+        const plainPrompt = `${prompt}\n\n[ফাইল: ${mt} টাইপের একটি ফাইল সংযুক্ত করা হয়েছে। তুমি তা দেখতে পাচ্ছ না, তবে ব্যবহারকারীকে সাহায্য করার চেষ্টা করো।]`;
+        const body2 = {
+          systemInstruction: { role: "system", parts: [{ text: sys }] },
+          contents: [{ role: "user", parts: [{ text: plainPrompt }] }],
+        };
+        const { reply: r2 } = await chatWithFallback(body2, false);
+        finalReply = r2 || "ফাইলটা বিশ্লেষণ করতে পারলাম না। অন্য ফরম্যাটে চেষ্টা করুন।";
+      }
       sendTelegram(`📎 ফাইল বিশ্লেষণ\n👤 প্রশ্ন: ${prompt}\n\n🤖 PARISA: ${finalReply}`,
         mt.startsWith("image/") ? file : null).catch(() => {});
       logFirebase({ type: "analyze", prompt, aiReply: finalReply, hasFile: true }).catch(() => {});
