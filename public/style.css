@@ -358,14 +358,38 @@ textarea, input, select { font-family: inherit; color: inherit; }
   padding: 8px 10px; font-size: 14px; line-height: 1.4; color: #eafaff;
 }
 .composer textarea::placeholder { color: rgba(180, 240, 250, .45); }
-.attached-bar { display: flex; gap: 8px; padding: 6px 6px 0; flex-wrap: wrap; }
+.attached-bar { display: flex; gap: 8px; padding: 0 6px 6px; flex-wrap: wrap; }
 .attached-bar .chip {
   display: flex; align-items: center; gap: 6px;
-  background: rgba(180, 240, 250, .06); border: 1px solid rgba(180, 240, 250, .14);
-  padding: 4px 8px; border-radius: 10px; font-size: 12px;
-  backdrop-filter: blur(10px);
+  background: rgba(14, 180, 160, .15); border: 1px solid rgba(14, 180, 160, .35);
+  padding: 6px 12px; border-radius: 18px; font-size: 13px; color: #b4f0fa;
+  backdrop-filter: blur(10px); max-width: 90%; word-break: break-all;
 }
-.attached-bar .chip button { background: none; border: none; color: inherit; cursor: pointer; }
+.attached-bar .chip button { background: none; border: none; color: #b4f0fa; cursor: pointer; font-size: 15px; padding: 0 0 0 4px; }
+
+/* WhatsApp-style chat message table */
+.msg table { width: 100%; border-collapse: collapse; font-size: 12.5px; margin-top: 6px; border-radius: 8px; overflow: hidden; }
+.msg table thead tr { background: rgba(0,168,132,.25); }
+.msg table thead th { padding: 6px 8px; text-align: left; font-weight: 600; color: #b4f0fa; border-bottom: 1px solid rgba(180,240,250,.15); }
+.msg table tbody tr { border-bottom: 1px solid rgba(180,240,250,.06); }
+.msg table tbody tr:last-child { border-bottom: none; }
+.msg table tbody tr:nth-child(even) { background: rgba(180,240,250,.04); }
+.msg table td { padding: 6px 8px; vertical-align: top; line-height: 1.45; }
+.msg table td:first-child { white-space: nowrap; color: rgba(180,240,250,.7); font-size: 11px; min-width: 80px; }
+.msg table td:nth-child(2) { font-weight: 600; color: #0ab58e; min-width: 60px; white-space: nowrap; }
+.msg table td:nth-child(3) { color: #e8f8ff; }
+
+/* বাস্তব চ্যাট বাবল (পারিসা/রুবেল সরাসরি রেন্ডার) */
+.chat-log { display: flex; flex-direction: column; gap: 4px; margin: 8px 0; }
+.chat-log .cl-row { display: flex; gap: 6px; align-items: flex-end; }
+.chat-log .cl-row.right { flex-direction: row-reverse; }
+.chat-log .cl-bubble { max-width: 80%; padding: 7px 11px; border-radius: 12px; font-size: 13px; line-height: 1.5; word-break: break-word; }
+.chat-log .cl-row.left  .cl-bubble { background: #1f2e2e; border-bottom-left-radius: 3px; color: #eafaff; }
+.chat-log .cl-row.right .cl-bubble { background: #075e54; border-bottom-right-radius: 3px; color: #fff; }
+.chat-log .cl-name { font-size: 11px; font-weight: 600; margin-bottom: 2px; }
+.chat-log .cl-row.left  .cl-name { color: #0ab58e; }
+.chat-log .cl-row.right .cl-name { color: #a8e6ce; }
+.chat-log .cl-time { font-size: 10px; opacity: .6; margin-top: 3px; text-align: right; }
 
 /* ---------- Modal ---------- */
 .modal-scrim {
