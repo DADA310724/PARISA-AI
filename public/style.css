@@ -241,15 +241,51 @@ textarea, input, select { font-family: inherit; color: inherit; }
 .chat-item .ci-act button { background: none; border: none; color: inherit; cursor: pointer; padding: 4px; display: grid; place-items: center; }
 .chat-item .ci-act .ic { width: 14px; height: 14px; }
 .chat-item.active { background: rgba(95, 232, 255, .14); border-color: rgba(95, 232, 255, .35); }
-.side-foot { margin-top: auto; padding-top: 10px; }
+.side-foot { margin-top: auto; padding-top: 10px; display: flex; flex-direction: column; gap: 6px; }
 .side-btn {
   width: 100%; padding: 12px 14px; border-radius: 12px;
   background: rgba(180, 240, 250, .04); border: 1px solid rgba(180, 240, 250, .12);
   color: #d8f3fb; text-align: left; font-weight: 500;
   backdrop-filter: blur(10px);
-  display: inline-flex; align-items: center; gap: 10px;
+  display: inline-flex; align-items: center; justify-content: space-between; gap: 10px;
+  cursor: pointer;
 }
 .side-btn .ic { width: 18px; height: 18px; }
+.side-version {
+  font-size: 11px; font-weight: 600; letter-spacing: .5px;
+  color: rgba(95, 232, 255, .7);
+  background: rgba(0, 200, 255, .08);
+  border: 1px solid rgba(0, 200, 255, .18);
+  border-radius: 6px; padding: 2px 7px;
+  white-space: nowrap;
+}
+.side-dev {
+  width: 100%; padding: 10px 14px; border-radius: 12px;
+  background: rgba(180, 240, 250, .04); border: 1px solid rgba(180, 240, 250, .10);
+  display: flex; align-items: center; justify-content: space-between; gap: 8px;
+  backdrop-filter: blur(10px);
+}
+.side-dev-text {
+  font-size: 10.5px; font-weight: 500; letter-spacing: .3px;
+  color: rgba(200, 230, 245, .6); white-space: nowrap;
+  overflow: hidden; text-overflow: ellipsis;
+}
+.dev-dada {
+  color: #00e5a0; font-weight: 700; letter-spacing: .5px;
+}
+.tg-btn {
+  flex-shrink: 0; display: flex; align-items: center; justify-content: center;
+  width: 32px; height: 32px; border-radius: 8px;
+  background: rgba(41, 169, 234, .15);
+  border: 1px solid rgba(41, 169, 234, .30);
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+  box-shadow: 0 2px 8px rgba(41, 169, 234, .18), inset 0 1px 0 rgba(255,255,255,.10);
+  transition: transform .18s, opacity .18s, box-shadow .18s;
+  opacity: .90;
+  text-decoration: none;
+}
+.tg-btn:hover { transform: scale(1.10); opacity: 1; box-shadow: 0 4px 14px rgba(41, 169, 234, .35), inset 0 1px 0 rgba(255,255,255,.15); }
 
 /* ---------- Chat area ---------- */
 .chat-wrap { position: relative; min-height: 0; overflow: hidden; }
