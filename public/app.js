@@ -689,6 +689,12 @@ PARISA MEMORY PORTAL এ আপনাকে স্বাগতম।
     if (callRecognizer) { try { callRecognizer.stop(); } catch {} }
     if (currentAudio) { currentAudio.pause(); currentAudio = null; }
     $("#audioCallView").classList.remove("is-open");
+    // Call history চ্যাটে দেখাও
+    const ac = getActive();
+    if (ac && ac.messages.length) {
+      welcomeEl.style.display = "none";
+      renderChat();
+    }
   }
   function callLoop() {
     if (!callOn) return;
@@ -760,6 +766,12 @@ PARISA MEMORY PORTAL এ আপনাকে স্বাগতম।
     if (vcStream) { vcStream.getTracks().forEach(t => t.stop()); vcStream = null; }
     if (currentAudio) { currentAudio.pause(); currentAudio = null; }
     $("#videoCallView").classList.remove("is-open");
+    // Video call history চ্যাটে দেখাও
+    const vc = getActive();
+    if (vc && vc.messages.length) {
+      welcomeEl.style.display = "none";
+      renderChat();
+    }
   }
   function videoCallLoop() {
     if (!vcOn) return;
