@@ -126,6 +126,53 @@ PARISA MEMORY PORTAL এ আপনাকে স্বাগতম।
     const imgBase = api("/image/");
     text = text.replace(/\[IMAGE:([A-Za-z0-9_\-]+)\]/g,
       `<img src="${imgBase}$1" class="drive-img" alt="স্ক্রিনশট" loading="lazy" onerror="this.style.display='none'">`);
+
+    // ── WhatsApp-style chat log rendering ──────────────────────────
+    // Detect blocks between ━━━ separators containing [HH:MM] sender: msg lines
+    if (/━+/.test(text) && /\[\d{1,2}:\d{2}\]/.test(text)) {
+      const lines = text.split("\n");
+      let html = "";
+      let inChat = false;
+      for (const line of lines) {
+        const trimmed = line.trim();
+        // Header line (📱 or platform name before first separator)
+        if (/━{3,}/.test(trimmed)) {
+          if (!inChat) {
+            html += `<div class="chat-log">`;
+            inChat = true;
+          }
+          continue;
+        }
+        // Chat message line: [HH:MM] Name: text
+        const m = trimmed.match(/^\[(\d{1,2}:\d{2})\]\s*([^:]+?)\s*:\s*([\s\S]*)$/);
+        if (m && inChat) {
+          const [, time, sender, msg] = m;
+          const sLower = sender.trim().toLowerCase();
+          const isRight = sLower === "রুবেল" || sLower === "rubel" || sLower === "kalachan" || sLower === "কালাচাঁন" || sLower === "কালাচাঁদ";
+          const side = isRight ? "right" : "left";
+          const sName = isRight ? "রুবেল" : sender.trim();
+          const escapedMsg = msg.replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;");
+          html += `<div class="cl-row ${side}"><div class="cl-bubble"><div class="cl-name">${sName}</div><div>${escapedMsg}</div><div class="cl-time">${time}</div></div></div>`;
+        } else if (inChat && trimmed && !/^\s*$/.test(trimmed) && !m) {
+          // Non-message text inside chat block (header/footer lines)
+          html += `<div class="cl-header">${trimmed.replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;")}</div>`;
+        }
+      }
+      if (inChat) html += `</div>`;
+      if (html) {
+        // Render any non-chat portions with markdown
+        const beforeChat = text.split(/━{3,}/)[0].trim();
+        let prefix = "";
+        if (beforeChat) {
+          try { prefix = DOMPurify.sanitize(marked.parse(beforeChat, { breaks: true, gfm: true })); }
+          catch { prefix = beforeChat.replace(/\n/g, "<br/>"); }
+        }
+        return DOMPurify.sanitize(prefix + html, {
+          ADD_TAGS: ["img", "div"], ADD_ATTR: ["src", "class", "alt", "loading", "onerror"]
+        });
+      }
+    }
+
     try {
       return DOMPurify.sanitize(
         marked.parse(text, { breaks: true, gfm: true }),
@@ -340,6 +387,7 @@ PARISA MEMORY PORTAL এ আপনাকে স্বাগতম।
   // ── Microsoft Edge TTS (server) → browser fallback ────────────────
   async function speak(text, btn = null) {
     if (!text || !text.trim()) return;
+    if (voiceMuted) { if (btn) _resetSpeakBtn(btn); return; }
     _ensureAudioCtx();
 
     const wasBtn = currentSpeakBtn;
@@ -548,7 +596,8 @@ PARISA MEMORY PORTAL এ আপনাকে স্বাগতম।
         });
         reply = (await r.json()).reply;
       } else {
-        const msgs = c.messages.map(m => ({ role: m.role, text: m.text }));
+        const allMsgs = c.messages.map(m => ({ role: m.role, text: m.text }));
+        const msgs = allMsgs.length > 12 ? allMsgs.slice(-12) : allMsgs;
         const r = await fetch(api("/chat"), {
           method: "POST", headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
@@ -819,6 +868,33 @@ PARISA MEMORY PORTAL এ আপনাকে স্বাগতম।
     // #welcome div স্বয়ংক্রিয়ভাবে দেখা যাবে (কোনো message নেই বলে)
     setTimeout(() => speak("আস্সালামু ওয়ালাইকুম। পারিসা মেমোরি পোর্টালে আপনাকে স্বাগতম।"), 1800);
   }
+
+  // ── Voice mute toggle ─────────────────────────────────────────────
+  let voiceMuted = (localStorage.getItem("parisa.voiceMuted") === "1");
+  const muteBtnEl = document.getElementById("muteBtn");
+  const muteIconEl = document.getElementById("muteIcon");
+
+  function _updateMuteUI() {
+    if (!muteBtnEl || !muteIconEl) return;
+    if (voiceMuted) {
+      muteBtnEl.classList.add("muted");
+      muteBtnEl.title = "ভয়েস বন্ধ — ট্যাপ করে চালু করুন";
+      muteIconEl.innerHTML = `<use href="#i-mute"/>`;
+    } else {
+      muteBtnEl.classList.remove("muted");
+      muteBtnEl.title = "ভয়েস চালু — ট্যাপ করে বন্ধ করুন";
+      muteIconEl.innerHTML = `<use href="#i-volume"/>`;
+    }
+  }
+  if (muteBtnEl) {
+    muteBtnEl.onclick = () => {
+      voiceMuted = !voiceMuted;
+      localStorage.setItem("parisa.voiceMuted", voiceMuted ? "1" : "0");
+      _updateMuteUI();
+      if (voiceMuted) _stopAll();
+    };
+  }
+  _updateMuteUI();
 
   // ── PWA service worker ────────────────────────────────────────────
   if ("serviceWorker" in navigator) {
