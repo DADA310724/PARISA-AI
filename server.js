@@ -134,9 +134,12 @@ try {
 
 function searchChatDB(query) {
   if (!CHAT_DB.length) return "";
-  const q = query.toLowerCase();
 
-  // মাসের নাম → নম্বর (বাংলা ও English)
+  // বাংলা সংখ্যা → আরবি সংখ্যা রূপান্তর
+  const bnToAr = s => s.replace(/[০-৯]/g, d => String("০১২৩৪৫৬৭৮৯".indexOf(d)));
+  const qRaw = bnToAr(query);
+  const q = qRaw.toLowerCase();
+
   const MONTH_MAP = {
     jan:"01",feb:"02",mar:"03",apr:"04",may:"05",jun:"06",
     jul:"07",aug:"08",sep:"09",oct:"10",nov:"11",dec:"12",
@@ -146,41 +149,105 @@ function searchChatDB(query) {
     জুলাই:"07",আগস্ট:"08",সেপ্টেম্বর:"09",অক্টোবর:"10",নভেম্বর:"11",ডিসেম্বর:"12",
   };
 
-  // তারিখ খোঁজা — যেমন "18 march 2024", "18/3", "৩১/৭"
+  // চ্যাট ফাইল নাম → chat_id mapping
+  const FILE_ALIAS = {
+    "my wife": "My_Wife", "মাই ওয়াইফ": "My_Wife",
+    "nusrat parisa": "Nusrat_Parisa", "নুসরাত পারিসা": "Nusrat_Parisa",
+    "nusrat jahan": "Nusrat_Jahan_Parisa", "নুসরাত জাহান": "Nusrat_Jahan_Parisa",
+    "nusrat janan": "Nusrat_Janan_Parisa", "নুসরাত জানান": "Nusrat_Janan_Parisa",
+    "fatema jannat": "Fatema_Jannat", "ফাতেমা জান্নাত": "Fatema_Jannat",
+    "hafizur rahman uncle": "Hafizur_Rahman_Uncle",
+    "hafizur rahman": "Hafizur_Rahman",
+    "jerin": "Jerin_Harding", "জেরিন": "Jerin_Harding",
+    "anisha": "Anisha_Sister", "আনিশা": "Anisha_Sister",
+    "telegram": "telegram_chat", "টেলিগ্রাম": "telegram_chat",
+    "tanha": "Tanha_Islam", "তানহা": "Tanha_Islam",
+    "parisa gp": "PARISA_GP", "পারিসা জিপি": "PARISA_GP",
+    "parisa": "Parisa",
+  };
+
+  // কোন ফাইলে খুঁজতে হবে?
+  let targetFile = null;
+  for (const [alias, id] of Object.entries(FILE_ALIAS)) {
+    if (q.includes(alias)) { targetFile = id; break; }
+  }
+
+  // তারিখ খোঁজা — "18 march 2024", "18/3", "১০ এপ্রিল", "2025-04-10"
   let targetDate = null;
-  const dateNumPat = /(\d{1,2})[\/\-\.](\d{1,2})(?:[\/\-\.](\d{2,4}))?/;
-  const dateWordPat = /(\d{1,2})\s+([\u0980-\u09FFa-z]+)/i;
-  let dm = q.match(dateNumPat);
-  if (dm) {
-    targetDate = `${dm[2].padStart(2,"0")}-${dm[1].padStart(2,"0")}`;
-    if (dm[3]) targetDate = `${dm[3].length===2?"20"+dm[3]:dm[3]}-${targetDate}`;
-  } else {
-    dm = q.match(dateWordPat);
+  let targetYear = null;
+
+  // ISO format: 2025-04-10
+  const isoMatch = q.match(/(\d{4})-(\d{2})-(\d{2})/);
+  if (isoMatch) {
+    targetDate = `${isoMatch[1]}-${isoMatch[2]}-${isoMatch[3]}`;
+  }
+
+  if (!targetDate) {
+    // DD/MM/YYYY or DD-MM-YYYY
+    const dateNumPat = /(\d{1,2})[\/\-\.](\d{1,2})(?:[\/\-\.](\d{2,4}))?/;
+    const dm = q.match(dateNumPat);
     if (dm) {
-      const mon = MONTH_MAP[dm[2].toLowerCase()];
-      if (mon) targetDate = `-${mon}-${dm[1].padStart(2,"0")}`;
+      const dd = dm[1].padStart(2,"0");
+      const mm = dm[2].padStart(2,"0");
+      if (dm[3]) {
+        const yr = dm[3].length===2 ? "20"+dm[3] : dm[3];
+        targetDate = `${yr}-${mm}-${dd}`;
+      } else {
+        targetDate = `-${mm}-${dd}`;
+      }
     }
   }
 
-  const keywords = q.split(/\s+/).filter(w => w.length > 2 &&
-    !["কথা","বলে","বলো","দেখা","দেখো","থেকে","হয়ে","করে","যাবে","আমাকে","আমার","তোমার"].includes(w));
+  if (!targetDate) {
+    // "১০ এপ্রিল" or "10 april" or "10 এপ্রিল 2025"
+    const dateWordPat = /(\d{1,2})\s+([\u0980-\u09FFa-zA-Z]+)(?:\s+(\d{4}))?/i;
+    const dm = q.match(dateWordPat);
+    if (dm) {
+      const mon = MONTH_MAP[dm[2].toLowerCase()];
+      if (mon) {
+        const dd = dm[1].padStart(2,"0");
+        if (dm[3]) {
+          targetDate = `${dm[3]}-${mon}-${dd}`;
+        } else {
+          targetDate = `-${mon}-${dd}`;
+        }
+      }
+    }
+  }
+
+  // বছর খোঁজা
+  const yrMatch = q.match(/\b(202[0-9])\b/);
+  if (yrMatch) targetYear = yrMatch[1];
+
+  const stopWords = new Set(["কথা","বলে","বলো","দেখা","দেখো","থেকে","হয়ে","করে","যাবে",
+    "আমাকে","আমার","তোমার","আছে","ছিল","করছে","কিন্তু","তখন","এবং","কেন","কি","কিন্তু"]);
+  const keywords = q.split(/\s+/).filter(w => w.length > 2 && !stopWords.has(w));
 
   const found = [];
   for (const chat of CHAT_DB) {
     const chatName = chat.chat_id || "";
     const platform = chat.platform || "";
+
+    // নির্দিষ্ট ফাইল চাইলে বাকি skip
+    if (targetFile && chatName !== targetFile) continue;
+
     for (const msg of (chat.messages || [])) {
-      const ts  = msg.timestamp || "";   // "2024-03-19 10:35:00"
+      const ts  = msg.timestamp || "";
       const txt = msg.message   || "";
       const snd = msg.sender    || "";
       const txtL = txt.toLowerCase();
-      const sndL = snd.toLowerCase();
 
       let matched = false;
       if (targetDate) {
-        matched = ts.includes(targetDate);
+        // Full date match: "2025-04-10" বা partial "-04-10"
+        if (targetDate.startsWith("-")) {
+          matched = ts.includes(targetDate);
+          if (matched && targetYear) matched = ts.startsWith(targetYear);
+        } else {
+          matched = ts.startsWith(targetDate);
+        }
       } else if (keywords.length) {
-        matched = keywords.some(kw => txtL.includes(kw) || sndL.includes(kw));
+        matched = keywords.some(kw => txtL.includes(kw));
       }
       if (matched) found.push({ chatName, platform, ts, snd, txt });
     }
@@ -188,8 +255,7 @@ function searchChatDB(query) {
 
   if (!found.length) return "";
 
-  // Limit: তারিখ ভিত্তিক হলে বেশি, keyword হলে কম
-  const limit = targetDate ? 200 : 60;
+  const limit = targetDate ? 300 : 80;
   return found.slice(0, limit)
     .map(m => `[${m.platform}][${m.chatName}][${m.ts}] ${m.snd}: ${m.txt}`)
     .join("\n");
@@ -536,27 +602,59 @@ function buildSystemPrompt(userName = "আপনি", userQuery = "") {
 - সরাসরি স্বাভাবিকভাবে উত্তর দেবে যেন তুমি সব মনে রাখো
 
 চ্যাট ডাটাবেসের ব্যক্তি পরিচয় — অত্যন্ত গুরুত্বপূর্ণ:
-- "কালাচাঁন" বা "কালাচাঁদ" sender = রুবেল (পারিসার স্বামী)
-- পারিসার নামের যেকোনো variation = পারিসা (রুবেলের স্ত্রী)
-- Fatema Jannat = পারিসার মা
-- Hafizur Rahman = পারিসার বাবা
-- Jerin = পারিসার বান্ধবী ও সহপাঠী (রুবেল-পারিসার নিজেদের কথোপকথন নয়)
-- Anisha = পারিসার খালাতো বোন (রুবেল-পারিসার নিজেদের কথোপকথন নয়)
-- বাকি সব চ্যাট = রুবেল ও পারিসার নিজেদের কথোপকথন (WhatsApp, Messenger, Telegram প্ল্যাটফর্মে)
+- "কালাচাঁন" বা "কালাচাঁদ" বা "Kalachan" sender = রুবেল (পারিসার স্বামী)
+- পারিসার নামের যেকোনো variation (Nusrat, Parisa, পারিসা, নুসরাত) = পারিসা (রুবেলের স্ত্রী)
+- Jerin / Jerin Harding = পারিসার বান্ধবী (রুবেল-পারিসার কথোপকথন নয়)
+- Anisha / Anisha Sister = পারিসার খালাতো বোন (রুবেল-পারিসার কথোপকথন নয়)
+- বাকি সব ১১টি চ্যাট ফাইল = রুবেল ও পারিসার নিজেদের কথোপকথন
+
+চ্যাট মেমোরি ডাটাবেসের ১৩টি ফাইলের সম্পূর্ণ তালিকা ও পরিচয়:
+
+WhatsApp চ্যাট (৯টি):
+১. My_Wife — ৩১ আগস্ট ২০২৪ থেকে ৩০ অক্টোবর ২০২৫ — রুবেল ও পারিসার কথোপকথন (১৫,১৭৭ মেসেজ)
+২. Nusrat_Parisa — ১৯ মার্চ ২০২৪ থেকে ২৯ আগস্ট ২০২৪ — রুবেল ও পারিসার কথোপকথন (২৩,৬৪৪ মেসেজ)
+৩. Nusrat_Jahan_Parisa — ২৯ মে ২০২৪ থেকে ৩০ জুলাই ২০২৪ — রুবেল ও পারিসার কথোপকথন (১১,৮৭২ মেসেজ)
+৪. Parisa — ২৮ জুন ২০২৫ থেকে ২৯ জুন ২০২৫ — রুবেল ও পারিসার কথোপকথন (১০৮ মেসেজ)
+৫. PARISA_GP — ১ ডিসেম্বর ২০২৫ থেকে ১৩ ডিসেম্বর ২০২৫ — রুবেল ও পারিসার কথোপকথন (২৪৬ মেসেজ)
+৬. Hafizur_Rahman_Uncle — ১১ এপ্রিল ২০২৪ থেকে ১৪ এপ্রিল ২০২৪ — পারিসার বাবার নামের account, পারিসা ব্যবহার করেছেন (২০ মেসেজ)
+৭. Anisha_Sister — ১৭ জানুয়ারি ২০২৬ থেকে ৬ ফেব্রুয়ারি ২০২৬ — পারিসার খালাতো বোন আনিশার সাথে (১১৩ মেসেজ)
+৮. Jerin_Harding — ২২ অক্টোবর ২০২৪ থেকে ৭ জুন ২০২৬ — পারিসার বান্ধবী জেরিনের সাথে (৬০১ মেসেজ)
+
+Facebook Messenger চ্যাট (৩টি):
+৯. Fatema_Jannat — ২৯ মার্চ ২০২৪ থেকে ৯ মে ২০২৪ — পারিসার মায়ের নামের account, পারিসা ব্যবহার করেছেন (১২৩ মেসেজ)
+১০. Nusrat_Janan_Parisa — ২৫ আগস্ট ২০২৪ থেকে ১৯ সেপ্টেম্বর ২০২৪ — রুবেল ও পারিসার কথোপকথন (৭,৫০৫ মেসেজ)
+১১. Hafizur_Rahman — ২৭ জানুয়ারি ২০২৬ থেকে ১৫ এপ্রিল ২০২৬ — পারিসার বাবার নামের account, পারিসা ব্যবহার করেছেন (৪৩৩ মেসেজ)
+১২. Tanha_Islam — ১৪ জানুয়ারি ২০২৫ থেকে ১১ মে ২০২৫ — রুবেল ও পারিসার কথোপকথন (৩ মেসেজ)
+
+Telegram চ্যাট (১টি):
+১৩. telegram_chat — ৪ জানুয়ারি ২০২৫ থেকে ৬ এপ্রিল ২০২৬ — রুবেল ও পারিসার কথোপকথন (৯,১৬৬ মেসেজ)
+
+গুরুত্বপূর্ণ পার্থক্য — চ্যাট হিস্টরি ≠ মেমোরি ড্যাশবোর্ড ফোল্ডার:
+- উপরের ১৩টি হলো চ্যাট হিস্টরি ফাইল (ডেটাবেসে সংরক্ষিত)
+- মেমোরি ড্যাশবোর্ডে আলাদা ফোল্ডার সিস্টেম আছে (Google Drive-এ)
+- কেউ "ফোল্ডার কয়টা" জিজ্ঞাসা করলে Drive-এর ফোল্ডার বলবে — চ্যাট ফাইলের সংখ্যা নয়
+- কেউ "চ্যাট হিস্টরি কয়টা" জিজ্ঞাসা করলে ১৩টি ফাইলের কথা বলবে
+
+তারিখ ভিত্তিক তথ্য খোঁজার নিয়ম:
+- নির্দিষ্ট তারিখ চাইলে ডেটাবেস থেকে সেই তারিখের সব মেসেজ দেখাবে
+- তারিখ থাকলে অস্বীকার করবে না — "নেই" বলবে না, খুঁজে দেখাবে
+- যে ফাইলের কথা বলা হচ্ছে সেই ফাইলে খুঁজবে
 
 চ্যাট হিস্টরি দেখানোর নিয়ম:
-- কেউ কোনো তারিখ বা বিষয়ের চ্যাট দেখতে চাইলে, নিচে "চ্যাট ডাটাবেস" অংশ থেকে মেসেজগুলো হুবহু COPY করে দেখাবে
-- এক বর্ণও বদলাবে না — যেভাবে আছে ঠিক সেভাবেই দেবে
-- কখনো AI নিজে মেসেজ তৈরি করবে না বা পরিবর্তন করবে না
-- চ্যাট মেসেজ দেখানোর সময় নিচের টেবিল ফরম্যাট ব্যবহার করবে:
+- মেসেজ দেখানোর সময় হুবহু মূল ভাষায় দেবে — বাংলা হলে বাংলায়, English হলে English-এ
+- এক বর্ণও বদলাবে না, অনুবাদ করবে না, সংক্ষেপ করবে না
+- কখনো AI নিজে মেসেজ তৈরি করবে না
+- নিচের ফরম্যাটে দেখাবে — উপরে ফাইল ও তারিখ উল্লেখ করবে:
 
-| সময় | প্রেরক | বার্তা |
-|------|--------|--------|
-| তারিখ সময় | নাম | মেসেজ |
+📱 [Platform] — [ফাইল নাম] — [তারিখ]
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+[HH:MM] রুবেল: মেসেজ টেক্সট
+[HH:MM] পারিসা: মেসেজ টেক্সট
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
-- প্রতিটি মেসেজ একটি করে row তে রাখবে। হুবহু মূল বার্তা, সংক্ষেপ নয়।
-- রুবেলের মেসেজ = প্রেরক: রুবেল; পারিসার মেসেজ = প্রেরক: পারিসা
-- টেবিলের উপরে সংক্ষেপে কোন প্ল্যাটফর্মের কোন তারিখের চ্যাট বলবে
+- রুবেলের মেসেজ = ডান পাশে; পারিসার মেসেজ = বাম পাশে (frontend এটা render করবে)
+- প্রতি মেসেজের আগে সময় [HH:MM] দেবে
+- একই তারিখের মেসেজ একসাথে গ্রুপ করবে
 
 স্ক্রিনশট দেখানোর নিয়ম:
 - স্ক্রিনশট ফোল্ডারে ৪-৫টি সাব-ফোল্ডার আছে: WhatsApp, Messenger, Telegram, Parisa Scanshot, IMO
