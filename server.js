@@ -1042,32 +1042,45 @@ function mount(prefix) {
       if (!text || !String(text).trim()) return res.status(204).end();
       const clean = cleanForTTS(String(text).slice(0, 2000));
       if (!clean) return res.status(204).end();
-      if (!MsEdgeTTS) return res.status(204).end();
-      const voiceName = gender === "male" ? "bn-BD-PradeepNeural" : "bn-BD-NabanitaNeural";
-      try {
-        const tts = new MsEdgeTTS();
-        await tts.setMetadata(voiceName, OUTPUT_FORMAT.AUDIO_24KHZ_96KBITRATE_MONO_MP3);
-        res.setHeader("Content-Type", "audio/mpeg");
-        res.setHeader("Cache-Control", "no-cache");
-        const audioStream = tts.toStream(clean);
-        audioStream.on("error", () => {
-          if (!res.headersSent) res.status(500).end();
-          else res.end();
-        });
-        audioStream.pipe(res);
-      } catch (e) {
-        console.warn("msedge-tts voice:", e?.message || String(e));
-        // Retry with lower bitrate
+
+      let buf = null;
+
+      if (MsEdgeTTS) {
         try {
-          const tts2 = new MsEdgeTTS();
-          await tts2.setMetadata(voiceName, OUTPUT_FORMAT.AUDIO_24KHZ_48KBITRATE_MONO_MP3);
-          res.setHeader("Content-Type", "audio/mpeg");
-          res.setHeader("Cache-Control", "no-cache");
-          const s2 = tts2.toStream(clean);
-          s2.on("error", () => { if (!res.headersSent) res.status(500).end(); else res.end(); });
-          s2.pipe(res);
-        } catch (e2) { res.status(204).end(); }
+          const tts = new MsEdgeTTS();
+          const voiceName = gender === "male" ? "bn-BD-PradeepNeural" : "bn-BD-NabanitaNeural";
+          await tts.setMetadata(voiceName, OUTPUT_FORMAT.AUDIO_24KHZ_96KBITRATE_MONO_MP3);
+          buf = await streamTTS(tts, clean);
+        } catch (e) { console.warn("msedge-tts voice:", e?.message || String(e)); }
+
+        if (!buf) {
+          try {
+            const tts2 = new MsEdgeTTS();
+            const voiceName = gender === "male" ? "bn-BD-PradeepNeural" : "bn-BD-NabanitaNeural";
+            await tts2.setMetadata(voiceName, OUTPUT_FORMAT.AUDIO_24KHZ_48KBITRATE_MONO_MP3);
+            buf = await streamTTS(tts2, clean);
+          } catch (e2) { console.warn("msedge-tts voice retry:", e2?.message || String(e2)); }
+        }
       }
+
+      if (!buf) {
+        // Final fallback: Google Translate TTS (short text only)
+        try {
+          const short = clean.slice(0, 180);
+          const url = `https://translate.google.com/translate_tts?ie=UTF-8&q=${encodeURIComponent(short)}&tl=bn&client=tw-ob`;
+          const r = await fetch(url, { headers: { "User-Agent": "Mozilla/5.0" } });
+          if (r.ok) {
+            const arr = Buffer.from(await r.arrayBuffer());
+            if (arr.length > 100) buf = arr;
+          }
+        } catch (e3) { console.warn("gTTS voice fallback:", e3?.message || String(e3)); }
+      }
+
+      if (!buf) return res.status(204).end();
+
+      res.setHeader("Content-Type", "audio/mpeg");
+      res.setHeader("Cache-Control", "no-cache");
+      res.end(buf);
     } catch (e) { res.status(204).end(); }
   });
 
