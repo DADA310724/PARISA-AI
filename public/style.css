@@ -444,16 +444,11 @@ textarea, input, select { font-family: inherit; color: inherit; }
   margin: 4px auto; max-width: 90%;
 }
 
-/* ---------- Voice mute button ---------- */
-#muteBtn.muted {
-  background: linear-gradient(180deg, rgba(255, 80, 80, .12), rgba(200, 40, 40, .06));
-  border-color: rgba(255, 100, 100, .35);
-  color: rgba(255, 140, 140, .90);
-}
-#muteBtn.muted:hover {
-  background: linear-gradient(180deg, rgba(255, 80, 80, .20), rgba(200, 40, 40, .10));
-  border-color: rgba(255, 100, 100, .55);
-}
+/* ---------- Chat History WhatsApp Block ---------- */
+.chat-history-block { padding: 10px !important; background: rgba(0,20,28,.55) !important; border: 1px solid rgba(95,232,255,.15) !important; }
+.ch-header { font-size: 11.5px; color: rgba(95,232,255,.8); background: rgba(0,180,200,.1); border-radius: 8px; padding: 5px 12px; margin-bottom: 8px; text-align: center; }
+.ch-footer { font-size: 11px; color: rgba(180,240,250,.5); text-align: center; margin-top: 8px; padding-top: 6px; border-top: 1px solid rgba(180,240,250,.08); }
+.cl-msg { line-height: 1.5; }
 
 /* ---------- Modal ---------- */
 .modal-scrim {
@@ -586,45 +581,6 @@ textarea, input, select { font-family: inherit; color: inherit; }
 }
 .voice-opt span { font-size: 14px; color: #d8f3fb; }
 
-/* ---------- Speed Slider ---------- */
-.speed-slider-wrap {
-  display: flex; align-items: center; gap: 10px; margin-top: 8px;
-}
-.speed-label { font-size: 16px; flex-shrink: 0; }
-.speed-track { flex: 1; display: flex; flex-direction: column; gap: 4px; }
-.speed-range {
-  -webkit-appearance: none; appearance: none;
-  width: 100%; height: 6px; border-radius: 10px; outline: none; cursor: pointer;
-  background: linear-gradient(to right, #5fe8ff 0%, #5fe8ff 43%, rgba(255,255,255,.15) 43%);
-  transition: background .15s;
-}
-.speed-range::-webkit-slider-thumb {
-  -webkit-appearance: none; appearance: none;
-  width: 22px; height: 22px; border-radius: 50%; cursor: pointer;
-  background: radial-gradient(circle, #5fe8ff 60%, #0bb8d8 100%);
-  box-shadow: 0 0 8px rgba(95,232,255,.6), 0 2px 6px rgba(0,0,0,.4);
-  border: 2px solid rgba(255,255,255,.3);
-  transition: box-shadow .2s, transform .1s;
-}
-.speed-range::-webkit-slider-thumb:hover {
-  box-shadow: 0 0 16px rgba(95,232,255,.9); transform: scale(1.15);
-}
-.speed-range::-moz-range-thumb {
-  width: 22px; height: 22px; border-radius: 50%; cursor: pointer;
-  background: radial-gradient(circle, #5fe8ff 60%, #0bb8d8 100%);
-  box-shadow: 0 0 8px rgba(95,232,255,.6); border: 2px solid rgba(255,255,255,.3);
-}
-.speed-ticks {
-  display: flex; justify-content: space-between;
-  font-size: 10px; opacity: .5; color: #aee2ec; padding: 0 2px;
-}
-.speed-display {
-  margin-top: 6px; text-align: center;
-  font-size: 12px; font-weight: 600;
-  color: #5fe8ff; letter-spacing: .5px;
-  background: rgba(95,232,255,.08); border-radius: 8px;
-  padding: 5px 12px; border: 1px solid rgba(95,232,255,.15);
-}
 
 /* ---------- Tweaks ---------- */
 @media (max-width: 480px) {
@@ -832,4 +788,51 @@ textarea, input, select { font-family: inherit; color: inherit; }
   margin: 0 auto !important;
   width: auto !important;
   position: static !important;
+}
+
+/* ══ CAPTION BOX — Typing animation (centered, floating) ══ */
+.call-caption {
+  position: absolute;
+  left: 50%;
+  transform: translateX(-50%);
+  bottom: 130px;
+  width: min(88vw, 420px);
+  min-height: 0;
+  max-height: 180px;
+  overflow: hidden;
+  text-align: center;
+  padding: 12px 18px;
+  background: rgba(0, 18, 24, 0.55);
+  backdrop-filter: blur(14px);
+  -webkit-backdrop-filter: blur(14px);
+  border-radius: 18px;
+  border: 1px solid rgba(111, 240, 255, 0.12);
+  color: #d8f8ff;
+  font-size: 15px;
+  font-family: 'Hind Siliguri', sans-serif;
+  line-height: 1.55;
+  letter-spacing: 0.01em;
+  pointer-events: none;
+  z-index: 10;
+  transition: opacity 0.2s ease;
+}
+.call-caption:empty { display: none; }
+
+.cap-word {
+  display: inline;
+  opacity: 0;
+  animation: capWordIn 0.25s ease forwards;
+}
+@keyframes capWordIn {
+  from { opacity: 0; transform: translateY(5px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+
+/* Audio call: move caption above controls */
+#audioCallView .call-caption {
+  bottom: 140px;
+}
+/* Video call: caption near bottom */
+#videoCallView .call-caption {
+  bottom: 130px;
 }
