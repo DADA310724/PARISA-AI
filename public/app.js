@@ -796,11 +796,15 @@ PARISA MEMORY PORTAL এ আপনাকে স্বাগতম।
       $("#audioCallStatus").textContent = "শুনছি…";
     };
     callRecognizer.onresult = (e) => {
-      if (currentAudio) { _stopAll(); aiReplying = false; }
       let interim = "";
       for (let i = e.resultIndex; i < e.results.length; i++) {
         const t = e.results[i][0].transcript;
         if (e.results[i].isFinal) buffer += t; else interim += t;
+      }
+      if (interim.trim() && (currentAudio || currentUtter)) {
+        _stopAll(); aiReplying = false;
+        setWave("listening");
+        $("#audioCallStatus").textContent = "শুনছি…";
       }
       updateCaption($("#audioCallCaption"), buffer + interim);
       if (silenceTimer) clearTimeout(silenceTimer);
@@ -907,11 +911,14 @@ PARISA MEMORY PORTAL এ আপনাকে স্বাগতম।
       $("#videoCallStatus").textContent = "কানেক্টেড";
     };
     vcRecognizer.onresult = (e) => {
-      if (currentAudio) { _stopAll(); aiReplying = false; }
       let interim = "";
       for (let i = e.resultIndex; i < e.results.length; i++) {
         const t = e.results[i][0].transcript;
         if (e.results[i].isFinal) buffer += t; else interim += t;
+      }
+      if (interim.trim() && (currentAudio || currentUtter)) {
+        _stopAll(); aiReplying = false;
+        $("#videoCallStatus").textContent = "কানেক্টেড";
       }
       updateCaption($("#videoCallCaption"), buffer + interim);
       if (silenceTimer) clearTimeout(silenceTimer);
