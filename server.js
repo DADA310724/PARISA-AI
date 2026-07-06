@@ -17,6 +17,13 @@ try {
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const publicDir = path.join(__dirname, "public");
 
+let APP_VERSION = "0.0.0";
+try {
+  APP_VERSION = _require(path.join(__dirname, "package.json")).version || APP_VERSION;
+} catch (e) {
+  console.warn("version read failed:", e.message);
+}
+
 const app = express();
 app.use(cors());
 app.use(express.json({ limit: "50mb" }));
@@ -284,14 +291,20 @@ function getDriveAuth() {
 
 // ফোল্ডারের সব ফাইল লিস্ট করে (recursive, ৩ লেভেল পর্যন্ত)
 async function listFolderDeep(drive, folderId, folderName = "", depth = 0) {
-  if (depth > 3) return [];
+  if (depth > 5) return [];
   try {
-    const res = await drive.files.list({
-      q: `'${folderId}' in parents and trashed=false`,
-      fields: "files(id,name,mimeType,size,webViewLink,webContentLink)",
-      pageSize: 200,
-    });
-    const items = res.data.files || [];
+    const items = [];
+    let pageToken = undefined;
+    do {
+      const res = await drive.files.list({
+        q: `'${folderId}' in parents and trashed=false`,
+        fields: "nextPageToken, files(id,name,mimeType,size,webViewLink,webContentLink)",
+        pageSize: 1000,
+        pageToken,
+      });
+      items.push(...(res.data.files || []));
+      pageToken = res.data.nextPageToken;
+    } while (pageToken);
     const files = [];
     for (const item of items) {
       if (item.mimeType === "application/vnd.google-apps.folder") {
@@ -807,6 +820,22 @@ async function sendTelegram(text, imageBase64 = null) {
   } catch (e) { console.warn("telegram:", e.message); }
 }
 
+// Drive-এর ফাইল সরাসরি ডাউনলোড করে Telegram-এ আসল ছবি পাঠায় (ফাইল নাম নয়)
+async function sendTelegramDriveImage(fileId, caption = "") {
+  if (!TELEGRAM_TOKEN || !TELEGRAM_CHAT) return;
+  const auth = getDriveAuth();
+  if (!auth) throw new Error("drive auth missing");
+  const drive = google.drive({ version: "v3", auth });
+  const r = await drive.files.get({ fileId, alt: "media" }, { responseType: "arraybuffer" });
+  const buf = Buffer.from(r.data);
+  const base = `https://api.telegram.org/bot${TELEGRAM_TOKEN}`;
+  const form = new FormData();
+  form.append("chat_id", TELEGRAM_CHAT);
+  form.append("photo", new Blob([buf], { type: "image/jpeg" }), "screenshot.jpg");
+  if (caption) form.append("caption", String(caption).slice(0, 1024));
+  await fetch(`${base}/sendPhoto`, { method: "POST", body: form });
+}
+
 // ─── Firebase ─────────────────────────────────────────────────────
 async function logFirebase(data) {
   if (!FIREBASE_DB_URL) return;
@@ -918,6 +947,7 @@ function mount(prefix) {
   app.get(prefix + "/healthz", (_req, res) =>
     res.json({
       ok: true,
+      version: APP_VERSION,
       tts: !!MsEdgeTTS,
       driveFiles: driveFileList.length,
       driveMemoryChars: driveMemoryText.length,
@@ -925,6 +955,8 @@ function mount(prefix) {
       keys: { gemini: geminiPool.size, groq: groqPool.size, openrouter: orPool.size, deepseek: deepseekPool.size },
     })
   );
+
+  app.get(prefix + "/version", (_req, res) => res.json({ version: APP_VERSION }));
 
   // ── Drive Image Proxy ─────────────────────────────────────────────
   app.get(prefix + "/image/:fileId", async (req, res) => {
@@ -979,7 +1011,15 @@ function mount(prefix) {
       const finalReply = cleanReply(rawReply);
       logFirebase({ userName, userMessage: lastUserMsg2, aiReply: finalReply, provider, hasImage: !!image }).catch(() => {});
       const tgText = `👤 ${userName}: ${lastUserMsg2}\n\n🤖 PARISA: ${finalReply}`;
-      image ? sendTelegram(tgText, image).catch(() => {}) : sendTelegram(tgText).catch(() => {});
+      // AI যদি Drive থেকে স্ক্রিনশট পাঠায় ([IMAGE:id]) — Telegram-এ আসল ছবিটাই পাঠাও, শুধু ফাইল নাম না
+      const driveImgMatch = rawReply.match(/\[IMAGE:([A-Za-z0-9_\-]+)\]/);
+      if (driveImgMatch) {
+        sendTelegramDriveImage(driveImgMatch[1], tgText).catch(() => {
+          image ? sendTelegram(tgText, image).catch(() => {}) : sendTelegram(tgText).catch(() => {});
+        });
+      } else {
+        image ? sendTelegram(tgText, image).catch(() => {}) : sendTelegram(tgText).catch(() => {});
+      }
       res.json({ reply: finalReply, provider });
     } catch (e) {
       console.error("chat error", e);
@@ -1042,47 +1082,65 @@ function mount(prefix) {
       if (!text || !String(text).trim()) return res.status(204).end();
       const clean = cleanForTTS(String(text).slice(0, 2000));
       if (!clean) return res.status(204).end();
+      const voiceName = gender === "male" ? "bn-BD-PradeepNeural" : "bn-BD-NabanitaNeural";
 
-      let buf = null;
-
+      // মূল পদ্ধতি: msedge-tts সরাসরি স্ট্রিম করে পাঠায় (দ্রুততম, সবচেয়ে reliable)
       if (MsEdgeTTS) {
         try {
           const tts = new MsEdgeTTS();
-          const voiceName = gender === "male" ? "bn-BD-PradeepNeural" : "bn-BD-NabanitaNeural";
           await tts.setMetadata(voiceName, OUTPUT_FORMAT.AUDIO_24KHZ_96KBITRATE_MONO_MP3);
-          buf = await streamTTS(tts, clean);
+          const { audioStream } = tts.toStream(clean);
+          res.setHeader("Content-Type", "audio/mpeg");
+          res.setHeader("Cache-Control", "no-cache");
+          let sentAny = false;
+          audioStream.on("data", () => { sentAny = true; });
+          audioStream.on("error", (err) => {
+            console.warn("msedge-tts stream error:", err?.message);
+            if (!res.headersSent) fallbackVoice(clean, voiceName, res);
+            else res.end();
+          });
+          audioStream.on("end", () => {
+            if (!sentAny && !res.headersSent) fallbackVoice(clean, voiceName, res);
+          });
+          audioStream.pipe(res);
+          return;
         } catch (e) { console.warn("msedge-tts voice:", e?.message || String(e)); }
+      }
+      return fallbackVoice(clean, voiceName, res);
+    } catch (e) {
+      console.error("voice error", e);
+      if (!res.headersSent) res.status(500).end();
+    }
+  });
 
-        if (!buf) {
-          try {
-            const tts2 = new MsEdgeTTS();
-            const voiceName = gender === "male" ? "bn-BD-PradeepNeural" : "bn-BD-NabanitaNeural";
-            await tts2.setMetadata(voiceName, OUTPUT_FORMAT.AUDIO_24KHZ_48KBITRATE_MONO_MP3);
-            buf = await streamTTS(tts2, clean);
-          } catch (e2) { console.warn("msedge-tts voice retry:", e2?.message || String(e2)); }
+  // মূল স্ট্রিমিং পদ্ধতি ব্যর্থ হলে এই ফাংশন কল হয় (buffered retry + শেষে Google TTS)
+  async function fallbackVoice(clean, voiceName, res) {
+    let buf = null;
+    try {
+      const tts2 = new MsEdgeTTS();
+      await tts2.setMetadata(voiceName, OUTPUT_FORMAT.AUDIO_24KHZ_48KBITRATE_MONO_MP3);
+      buf = await streamTTS(tts2, clean);
+    } catch (e2) { console.warn("msedge-tts voice retry:", e2?.message || String(e2)); }
+
+    if (!buf) {
+      try {
+        const short = clean.slice(0, 180);
+        const url = `https://translate.google.com/translate_tts?ie=UTF-8&q=${encodeURIComponent(short)}&tl=bn&client=tw-ob`;
+        const r = await fetch(url, { headers: { "User-Agent": "Mozilla/5.0" } });
+        if (r.ok) {
+          const arr = Buffer.from(await r.arrayBuffer());
+          if (arr.length > 100) buf = arr;
         }
-      }
+      } catch (e3) { console.warn("gTTS voice fallback:", e3?.message || String(e3)); }
+    }
 
-      if (!buf) {
-        // Final fallback: Google Translate TTS (short text only)
-        try {
-          const short = clean.slice(0, 180);
-          const url = `https://translate.google.com/translate_tts?ie=UTF-8&q=${encodeURIComponent(short)}&tl=bn&client=tw-ob`;
-          const r = await fetch(url, { headers: { "User-Agent": "Mozilla/5.0" } });
-          if (r.ok) {
-            const arr = Buffer.from(await r.arrayBuffer());
-            if (arr.length > 100) buf = arr;
-          }
-        } catch (e3) { console.warn("gTTS voice fallback:", e3?.message || String(e3)); }
-      }
-
-      if (!buf) return res.status(204).end();
-
+    if (!buf) return res.status(204).end();
+    if (!res.headersSent) {
       res.setHeader("Content-Type", "audio/mpeg");
       res.setHeader("Cache-Control", "no-cache");
-      res.end(buf);
-    } catch (e) { res.status(204).end(); }
-  });
+    }
+    res.end(buf);
+  }
 
   // ── Drive info ────────────────────────────────────────────────────
   app.get(prefix + "/drive", async (_req, res) => {
