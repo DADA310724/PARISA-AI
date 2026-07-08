@@ -238,12 +238,31 @@ PARISA MEMORY PORTAL এ আপনাকে স্বাগতম।
   const settingsModal = $("#settingsModal");
   const settingsScrim = $("#settingsScrim");
 
+  let _cachedVersion = null;
+  async function fetchAppVersion() {
+    if (_cachedVersion) return _cachedVersion;
+    try {
+      const r = await fetch(api("/version"));
+      if (r.ok) {
+        const d = await r.json();
+        _cachedVersion = d.version || null;
+      }
+    } catch {}
+    return _cachedVersion;
+  }
+
   function openSettings() {
     const g = settings.voiceGender || "female";
     document.querySelector(`input[name="voiceGender"][value="${g}"]`).checked = true;
     $("#userName").value = settings.userName || "";
     settingsModal.classList.add("show");
     settingsScrim.classList.add("show");
+    fetchAppVersion().then(v => {
+      const el = $("#appVersionText");
+      if (el) el.textContent = v ? `v${v}` : "–";
+      const sv = $(".side-version");
+      if (sv && v) sv.textContent = `v${v}`;
+    });
   }
 
   function closeSettings() {
