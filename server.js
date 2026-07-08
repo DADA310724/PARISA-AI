@@ -1089,7 +1089,7 @@ function mount(prefix) {
         try {
           const tts = new MsEdgeTTS();
           await tts.setMetadata(voiceName, OUTPUT_FORMAT.AUDIO_24KHZ_96KBITRATE_MONO_MP3);
-          const { audioStream } = tts.toStream(clean);
+          const audioStream = tts.toStream(clean);
           res.setHeader("Content-Type", "audio/mpeg");
           res.setHeader("Cache-Control", "no-cache");
           let sentAny = false;
