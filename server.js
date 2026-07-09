@@ -398,11 +398,13 @@ setInterval(() => {
 
 // ─── ইতিহাস ফাইল লোড করো (parisa-history.txt থেকে) ──────────────
 let RUBEL_HISTORY = "";
+let HISTORY_SOURCE = "fallback"; // "file" | "fallback"
 try {
   RUBEL_HISTORY = readFileSync(path.join(__dirname, "parisa-history.txt"), "utf-8");
-  console.log(`✅ History loaded: ${RUBEL_HISTORY.length} chars`);
+  HISTORY_SOURCE = "file";
+  console.log(`✅ History loaded from file: ${RUBEL_HISTORY.length} chars`);
 } catch (e) {
-  console.warn("⚠️ parisa-history.txt load failed:", e.message);
+  console.warn("⚠️ parisa-history.txt load failed — using inline fallback:", e.message);
   RUBEL_HISTORY = `
 === রুবেল ও পারিসার সম্পর্কের সম্পূর্ণ ইতিহাস ===
 
@@ -882,7 +884,9 @@ function mount(prefix) {
       tts: !!MsEdgeTTS,
       driveFiles: driveFileList.length,
       driveMemoryChars: driveMemoryText.length,
-      historyLoaded: true,
+      historyLoaded: HISTORY_SOURCE === "file",
+      historySource: HISTORY_SOURCE,
+      historyChars: RUBEL_HISTORY.length,
       keys: { gemini: geminiPool.size, groq: groqPool.size, openrouter: orPool.size, deepseek: deepseekPool.size },
     })
   );
@@ -944,10 +948,17 @@ function mount(prefix) {
       const tgText = `👤 ${userName}: ${lastUserMsg2}\n\n🤖 PARISA: ${finalReply}`;
       // Text + user image → Telegram
       image ? sendTelegram(tgText, image).catch(() => {}) : sendTelegram(tgText).catch(() => {});
-      // AI যদি Drive স্ক্রিনশট পাঠায় ([IMAGE:id]) — প্রতিটা আলাদাভাবে Telegram-এ পাঠাও
-      const driveImgMatches = [...rawReply.matchAll(/\[IMAGE:([A-Za-z0-9_\-]+)\]/g)].map(m => m[1]);
-      for (const fid of driveImgMatches) {
-        sendTelegramDriveImage(fid, "").catch(() => {});
+      // AI যদি Drive স্ক্রিনশট পাঠায় ([IMAGE:id]) — max 5টা, deduped, 400ms delay দিয়ে পাঠাও
+      const driveImgMatches = [...new Set(
+        [...rawReply.matchAll(/\[IMAGE:([A-Za-z0-9_\-]+)\]/g)].map(m => m[1])
+      )].slice(0, 5);
+      if (driveImgMatches.length > 0) {
+        (async () => {
+          for (const fid of driveImgMatches) {
+            await sendTelegramDriveImage(fid, "").catch(() => {});
+            await new Promise(r => setTimeout(r, 400));
+          }
+        })();
       }
       res.json({ reply: finalReply, provider });
     } catch (e) {
@@ -1095,7 +1106,8 @@ function mount(prefix) {
       screenshots: cats.screenshot,
       hasMemory: driveMemoryText.length > 0,
       memoryChars: driveMemoryText.length,
-      historyLoaded: true,
+      historyLoaded: HISTORY_SOURCE === "file",
+      historySource: HISTORY_SOURCE,
     });
   });
 
