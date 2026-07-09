@@ -1,6 +1,6 @@
 {
   "name": "@workspace/portal",
-  "version": "2.1.0",
+  "version": "2.15.0",
   "private": true,
   "type": "module",
   "scripts": {
@@ -8,7 +8,8 @@
     "start": "node --max-old-space-size=350 server.js",
     "build": "echo 'no build step'",
     "serve": "node --max-old-space-size=350 server.js",
-    "typecheck": "echo 'no typecheck'"
+    "typecheck": "echo 'no typecheck'",
+    "version:bump": "node -e \"const fs=require('fs'),p=JSON.parse(fs.readFileSync('package.json','utf8'));const[ma,mi,pa]=p.version.split('.').map(Number);p.version=ma+'.'+(mi+1)+'.0';fs.writeFileSync('package.json',JSON.stringify(p,null,2)+'\\n');console.log('Version bumped to',p.version);\""
   },
   "dependencies": {
     "cors": "^2.8.5",

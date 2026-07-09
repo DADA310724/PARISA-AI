@@ -362,7 +362,7 @@ textarea, input, select { font-family: inherit; color: inherit; }
 .msg pre code { background: transparent; padding: 0; }
 .msg p { margin: 6px 0; }
 .msg ul, .msg ol { margin: 6px 0 6px 20px; }
-.msg-actions { display: flex; gap: 6px; margin-top: 8px; opacity: .85; }
+.msg-actions { display: flex; justify-content: space-between; align-items: center; width: 100%; margin-top: 8px; opacity: .85; }
 .msg-actions button {
   background: rgba(180, 240, 250, .04); border: 1px solid rgba(180, 240, 250, .12);
   color: #d8f3fb; padding: 6px 9px; border-radius: 8px; cursor: pointer;
