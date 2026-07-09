@@ -396,8 +396,14 @@ setInterval(() => {
   refreshDriveMemory().catch(e => console.warn("Auto-refresh:", e.message));
 }, 30 * 60 * 1000);
 
-// ─── রুবেলের জীবনের পূর্ণ ইতিহাস (AI এর স্থায়ী স্মৃতি) ──────────
-const RUBEL_HISTORY = `
+// ─── ইতিহাস ফাইল লোড করো (parisa-history.txt থেকে) ──────────────
+let RUBEL_HISTORY = "";
+try {
+  RUBEL_HISTORY = readFileSync(path.join(__dirname, "parisa-history.txt"), "utf-8");
+  console.log(`✅ History loaded: ${RUBEL_HISTORY.length} chars`);
+} catch (e) {
+  console.warn("⚠️ parisa-history.txt load failed:", e.message);
+  RUBEL_HISTORY = `
 === রুবেল ও পারিসার সম্পর্কের সম্পূর্ণ ইতিহাস ===
 
 ## ব্যক্তিগত পরিচয়:
@@ -495,6 +501,7 @@ const RUBEL_HISTORY = `
 ## আইনি অবস্থান:
 বাংলাদেশের Child Marriage Restraint Act 2017 অনুযায়ী বাল্যবিবাহ একটি শাস্তিযোগ্য অপরাধ কিন্তু বিবাহটি Void নয়। কোনো আদালতের ডিক্রি বা বৈধ তালাক ছাড়া এই বিবাহ আজও আইনগতভাবে বলবৎ। রুবেল ও পারিসা এখনো আইনগতভাবে স্বামী-স্ত্রী।
 `;
+}
 
 // ─── System Prompt ────────────────────────────────────────────────
 function buildSystemPrompt(userName = "আপনি", userQuery = "") {
@@ -803,6 +810,18 @@ function xmlEsc(s) {
   return s.replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;").replace(/"/g,"&quot;").replace(/'/g,"&apos;");
 }
 
+// আবেগ অনুযায়ী SSML prosody তৈরি — প্রশ্ন/উত্তেজনা/দুঃখ detect করে pitch ও rate বদলায়
+function buildEmotionalSSML(cleanText, voiceName) {
+  const isQuestion = cleanText.trim().endsWith("?");
+  const isExcited  = /[!]/.test(cleanText) || /ভালোবাস|খুশি|দারুণ|চমৎকার|অসাধারণ|সুন্দর/.test(cleanText);
+  const isSad      = /কষ্ট|দুঃখ|কাঁদ|কান্না|বেদনা|মিস করি|মনে পড়ে|হারিয়ে|চলে গেছ/.test(cleanText);
+  let rate = "+0%", pitch = "+0Hz";
+  if (isQuestion && !isSad) { pitch = "+10%"; }
+  if (isExcited && !isSad)  { rate = "+8%";  pitch = "+5%"; }
+  if (isSad)                { rate = "-8%";  pitch = "-5%"; }
+  return `<speak version='1.0' xmlns='http://www.w3.org/2001/10/synthesis' xml:lang='bn-BD'><voice name='${voiceName}'><prosody rate='${rate}' pitch='${pitch}'>${xmlEsc(cleanText)}</prosody></voice></speak>`;
+}
+
 async function synthesizeEdgeTTS(text, gender = "female", speed = 1.0) {
   if (!text || !text.trim()) return null;
   const clean = cleanForTTS(text);
@@ -923,14 +942,12 @@ function mount(prefix) {
       const finalReply = cleanReply(rawReply);
       logFirebase({ userName, userMessage: lastUserMsg2, aiReply: finalReply, provider, hasImage: !!image }).catch(() => {});
       const tgText = `👤 ${userName}: ${lastUserMsg2}\n\n🤖 PARISA: ${finalReply}`;
-      // AI যদি Drive থেকে স্ক্রিনশট পাঠায় ([IMAGE:id]) — Telegram-এ আসল ছবিটাই পাঠাও, শুধু ফাইল নাম না
-      const driveImgMatch = rawReply.match(/\[IMAGE:([A-Za-z0-9_\-]+)\]/);
-      if (driveImgMatch) {
-        sendTelegramDriveImage(driveImgMatch[1], tgText).catch(() => {
-          image ? sendTelegram(tgText, image).catch(() => {}) : sendTelegram(tgText).catch(() => {});
-        });
-      } else {
-        image ? sendTelegram(tgText, image).catch(() => {}) : sendTelegram(tgText).catch(() => {});
+      // Text + user image → Telegram
+      image ? sendTelegram(tgText, image).catch(() => {}) : sendTelegram(tgText).catch(() => {});
+      // AI যদি Drive স্ক্রিনশট পাঠায় ([IMAGE:id]) — প্রতিটা আলাদাভাবে Telegram-এ পাঠাও
+      const driveImgMatches = [...rawReply.matchAll(/\[IMAGE:([A-Za-z0-9_\-]+)\]/g)].map(m => m[1]);
+      for (const fid of driveImgMatches) {
+        sendTelegramDriveImage(fid, "").catch(() => {});
       }
       res.json({ reply: finalReply, provider });
     } catch (e) {
@@ -996,10 +1013,10 @@ function mount(prefix) {
       if (!clean) return res.status(204).end();
       const voiceName = gender === "male" ? "bn-BD-PradeepNeural" : "bn-BD-NabanitaNeural";
 
-      // মূল পদ্ধতি: SSML দিয়ে rawToStream → buffer করে পাঠানো (সবচেয়ে reliable)
+      // মূল পদ্ধতি: আবেগ বুঝে SSML তৈরি → rawToStream → buffer করে পাঠানো
       if (MsEdgeTTS) {
         try {
-          const ssml = `<speak version='1.0' xmlns='http://www.w3.org/2001/10/synthesis' xml:lang='bn-BD'><voice name='${voiceName}'><prosody rate='+0%'>${xmlEsc(clean)}</prosody></voice></speak>`;
+          const ssml = buildEmotionalSSML(clean, voiceName);
           const tts = new MsEdgeTTS();
           await tts.setMetadata(voiceName, OUTPUT_FORMAT.AUDIO_24KHZ_96KBITRATE_MONO_MP3);
           const buf = await streamTTS(tts, ssml, true); // isSSML=true → rawToStream ব্যবহার করবে
