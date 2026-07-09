@@ -119,10 +119,6 @@ PARISA MEMORY PORTAL এ আপনাকে স্বাগতম।
     speakBtn.innerHTML = `<svg class="ic"><use href="#i-volume"/></svg> ভয়েস`;
     speakBtn.title = "ভয়েস চালু/বন্ধ";
     speakBtn.onclick = () => speak(text, speakBtn);
-    // copy একদম বামে, voice একদম ডানে
-    acts.style.display = "flex";
-    acts.style.justifyContent = "space-between";
-    acts.style.width = "100%";
     acts.append(copyBtn, speakBtn);
     return acts;
   }
