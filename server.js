@@ -17,12 +17,8 @@ try {
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const publicDir = path.join(__dirname, "public");
 
-let APP_VERSION = "0.0.0";
-try {
-  APP_VERSION = _require(path.join(__dirname, "package.json")).version || APP_VERSION;
-} catch (e) {
-  console.warn("version read failed:", e.message);
-}
+// ভার্সন ফরম্যাট: V-<n> — প্রতিটি নতুন আপডেটে n ঠিক ১ করে বাড়বে (package.json-এর semver থেকে স্বাধীন)
+const APP_VERSION = "V-16";
 
 const app = express();
 app.use(cors());
@@ -806,7 +802,7 @@ async function streamTTS(tts, inputText, isSSML = false) {
   return buf.length > 500 ? buf : null;
 }
 
-// ─── TTS: Microsoft Edge TTS (primary) + Google Translate (fallback) ──────────
+// ─── TTS: শুধুমাত্র Microsoft Edge TTS ──────────────────────────────
 // XML special chars must be escaped inside SSML content
 function xmlEsc(s) {
   return s.replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;").replace(/"/g,"&quot;").replace(/'/g,"&apos;");
@@ -824,44 +820,36 @@ function buildEmotionalSSML(cleanText, voiceName) {
   return `<speak version='1.0' xmlns='http://www.w3.org/2001/10/synthesis' xml:lang='bn-BD'><voice name='${voiceName}'><prosody rate='${rate}' pitch='${pitch}'>${xmlEsc(cleanText)}</prosody></voice></speak>`;
 }
 
-async function synthesizeEdgeTTS(text, gender = "female", speed = 1.0) {
-  if (!text || !text.trim()) return null;
-  const clean = cleanForTTS(text);
-  if (!clean) return null;
+// শুধুমাত্র Microsoft Edge TTS — একাধিক লেভেলে রিট্রাই করে, কখনো silently fail করে না।
+// Google Translate TTS-সহ কোনো বাহ্যিক fallback নেই — এটাই এখন একমাত্র ভয়েস পদ্ধতি।
+async function synthesizeVoiceRobust(clean, voiceName) {
+  if (!MsEdgeTTS) throw new Error("msedge-tts module not loaded");
 
-  const ratePct = Math.round((speed - 1) * 100);
-  const rateStr = ratePct >= 0 ? `+${ratePct}%` : `${ratePct}%`;
-  const voiceName = gender === "male" ? "bn-BD-PradeepNeural" : "bn-BD-NabanitaNeural";
-  // rawToStream-এর জন্য SSML ব্যবহার করো
-  const ssml = `<speak version='1.0' xmlns='http://www.w3.org/2001/10/synthesis' xml:lang='bn-BD'><voice name='${voiceName}'><prosody rate='${rateStr}'>${xmlEsc(clean)}</prosody></voice></speak>`;
+  const attempts = [
+    { ssml: true,  format: OUTPUT_FORMAT.AUDIO_24KHZ_96KBITRATE_MONO_MP3 },
+    { ssml: true,  format: OUTPUT_FORMAT.AUDIO_24KHZ_48KBITRATE_MONO_MP3 },
+    { ssml: false, format: OUTPUT_FORMAT.AUDIO_24KHZ_48KBITRATE_MONO_MP3 },
+    { ssml: false, format: OUTPUT_FORMAT.AUDIO_16KHZ_64KBITRATE_MONO_MP3 },
+    { ssml: false, format: OUTPUT_FORMAT.AUDIO_16KHZ_32KBITRATE_MONO_MP3 },
+  ];
 
-  if (MsEdgeTTS) {
+  let lastErr = null;
+  for (let i = 0; i < attempts.length; i++) {
+    const { ssml, format } = attempts[i];
     try {
       const tts = new MsEdgeTTS();
-      await tts.setMetadata(voiceName, OUTPUT_FORMAT.AUDIO_24KHZ_96KBITRATE_MONO_MP3);
-      const buf = await streamTTS(tts, ssml, true); // rawToStream with SSML
+      await tts.setMetadata(voiceName, format);
+      const payload = ssml ? buildEmotionalSSML(clean, voiceName) : clean;
+      const buf = await streamTTS(tts, payload, ssml);
       if (buf) return buf;
-    } catch (e) { console.warn("msedge-tts:", e.message); }
-
-    try {
-      const tts2 = new MsEdgeTTS();
-      await tts2.setMetadata(voiceName, OUTPUT_FORMAT.AUDIO_24KHZ_48KBITRATE_MONO_MP3);
-      const buf = await streamTTS(tts2, clean, false); // plain text fallback
-      if (buf) return buf;
-    } catch (e) { console.warn("msedge-tts retry:", e.message); }
-  }
-
-  try {
-    const short = clean.slice(0, 180);
-    const url = `https://translate.google.com/translate_tts?ie=UTF-8&q=${encodeURIComponent(short)}&tl=bn&client=tw-ob`;
-    const r = await fetch(url, { headers: { "User-Agent": "Mozilla/5.0" } });
-    if (r.ok) {
-      const buf = Buffer.from(await r.arrayBuffer());
-      if (buf.length > 100) return buf;
+      lastErr = new Error(`empty audio buffer (attempt ${i + 1}/${attempts.length})`);
+    } catch (e) {
+      lastErr = e;
+      console.warn(`msedge-tts attempt ${i + 1}/${attempts.length} failed:`, e?.message || String(e));
     }
-  } catch (e) { console.warn("gTTS:", e.message); }
-
-  return null;
+    if (i < attempts.length - 1) await new Promise((r) => setTimeout(r, 300)); // ট্রানজিয়েন্ট নেটওয়ার্ক সমস্যা কাটানোর বিরতি
+  }
+  throw lastErr || new Error("msedge-tts: all retry attempts failed");
 }
 
 // ─── Routes ───────────────────────────────────────────────────────
@@ -1016,6 +1004,7 @@ function mount(prefix) {
   });
 
   // ── Voice ─────────────────────────────────────────────────────────
+  // শুধু Microsoft Edge TTS — আবেগ বুঝে SSML + ৫-স্তর রিট্রাই, কখনো silently fail করে না।
   app.post(prefix + "/voice", async (req, res) => {
     try {
       const { text, gender = "female" } = req.body || {};
@@ -1024,67 +1013,15 @@ function mount(prefix) {
       if (!clean) return res.status(204).end();
       const voiceName = gender === "male" ? "bn-BD-PradeepNeural" : "bn-BD-NabanitaNeural";
 
-      // মূল পদ্ধতি: আবেগ বুঝে SSML তৈরি → rawToStream → buffer করে পাঠানো
-      if (MsEdgeTTS) {
-        try {
-          const ssml = buildEmotionalSSML(clean, voiceName);
-          const tts = new MsEdgeTTS();
-          await tts.setMetadata(voiceName, OUTPUT_FORMAT.AUDIO_24KHZ_96KBITRATE_MONO_MP3);
-          const buf = await streamTTS(tts, ssml, true); // isSSML=true → rawToStream ব্যবহার করবে
-          if (buf) {
-            res.setHeader("Content-Type", "audio/mpeg");
-            res.setHeader("Cache-Control", "no-cache");
-            return res.end(buf);
-          }
-        } catch (e) { console.warn("msedge-tts voice (SSML):", e?.message || String(e)); }
-
-        // Retry: plain text দিয়ে toStream
-        try {
-          const tts2 = new MsEdgeTTS();
-          await tts2.setMetadata(voiceName, OUTPUT_FORMAT.AUDIO_24KHZ_48KBITRATE_MONO_MP3);
-          const buf2 = await streamTTS(tts2, clean, false);
-          if (buf2) {
-            res.setHeader("Content-Type", "audio/mpeg");
-            res.setHeader("Cache-Control", "no-cache");
-            return res.end(buf2);
-          }
-        } catch (e) { console.warn("msedge-tts voice retry:", e?.message || String(e)); }
-      }
-      return fallbackVoice(clean, voiceName, res);
-    } catch (e) {
-      console.error("voice error", e);
-      if (!res.headersSent) res.status(500).end();
-    }
-  });
-
-  // মূল স্ট্রিমিং পদ্ধতি ব্যর্থ হলে এই ফাংশন কল হয় (buffered retry + শেষে Google TTS)
-  async function fallbackVoice(clean, voiceName, res) {
-    let buf = null;
-    try {
-      const tts2 = new MsEdgeTTS();
-      await tts2.setMetadata(voiceName, OUTPUT_FORMAT.AUDIO_24KHZ_48KBITRATE_MONO_MP3);
-      buf = await streamTTS(tts2, clean);
-    } catch (e2) { console.warn("msedge-tts voice retry:", e2?.message || String(e2)); }
-
-    if (!buf) {
-      try {
-        const short = clean.slice(0, 180);
-        const url = `https://translate.google.com/translate_tts?ie=UTF-8&q=${encodeURIComponent(short)}&tl=bn&client=tw-ob`;
-        const r = await fetch(url, { headers: { "User-Agent": "Mozilla/5.0" } });
-        if (r.ok) {
-          const arr = Buffer.from(await r.arrayBuffer());
-          if (arr.length > 100) buf = arr;
-        }
-      } catch (e3) { console.warn("gTTS voice fallback:", e3?.message || String(e3)); }
-    }
-
-    if (!buf) return res.status(204).end();
-    if (!res.headersSent) {
+      const buf = await synthesizeVoiceRobust(clean, voiceName);
       res.setHeader("Content-Type", "audio/mpeg");
       res.setHeader("Cache-Control", "no-cache");
+      return res.end(buf);
+    } catch (e) {
+      console.error("voice error — সব রিট্রাই ব্যর্থ:", e?.message || String(e));
+      if (!res.headersSent) res.status(500).json({ error: "voice_synthesis_failed" });
     }
-    res.end(buf);
-  }
+  });
 
   // ── Drive info ────────────────────────────────────────────────────
   app.get(prefix + "/drive", async (_req, res) => {

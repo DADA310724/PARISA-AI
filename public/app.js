@@ -260,9 +260,9 @@ PARISA MEMORY PORTAL এ আপনাকে স্বাগতম।
     settingsScrim.classList.add("show");
     fetchAppVersion().then(v => {
       const el = $("#appVersionText");
-      if (el) el.textContent = v ? `v${v}` : "–";
+      if (el) el.textContent = v || "–";
       const sv = $(".side-version");
-      if (sv && v) sv.textContent = `v${v}`;
+      if (sv && v) sv.textContent = v;
     });
   }
 
