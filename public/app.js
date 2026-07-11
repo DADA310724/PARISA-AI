@@ -383,7 +383,53 @@ PARISA MEMORY PORTAL এ আপনাকে স্বাগতম।
     setTimeout(() => { toast.style.display = "none"; toast.removeEventListener("click", play); if (currentAudio === audioEl) { currentAudio = null; currentSpeakBtn = null; URL.revokeObjectURL(url); _resetSpeakBtn(btn); } }, 15000);
   }
 
-  // ── Microsoft Edge TTS (server) → browser fallback ────────────────
+  // ── শুধুমাত্র Microsoft Edge TTS — কোনো ব্রাউজার ভয়েস fallback নেই ──
+  // নেটওয়ার্ক-লেভেলে ব্যর্থ হলে ক্লায়েন্ট নিজেও কয়েকবার রিট্রাই করে; সব
+  // চেষ্টা ব্যর্থ হলে ব্যবহারকারীকে স্পষ্ট এরর দেখানো হয় — কখনো silently fail করে না,
+  // এবং কখনো ব্রাউজারের নিজস্ব speechSynthesis ভয়েসে চলে যায় না।
+  function _showErrorToast(message) {
+    let toast = document.getElementById("_voice_err_toast");
+    if (!toast) {
+      toast = document.createElement("div");
+      toast.id = "_voice_err_toast";
+      toast.style.cssText = "position:fixed;bottom:90px;left:50%;transform:translateX(-50%);background:rgba(255,60,60,.18);backdrop-filter:blur(12px);border:1px solid rgba(255,60,60,.4);color:#ffe0e0;padding:12px 20px;border-radius:40px;font-size:15px;z-index:999;box-shadow:0 4px 24px rgba(0,0,0,.3)";
+      document.body.appendChild(toast);
+    }
+    toast.textContent = message;
+    toast.style.display = "block";
+    clearTimeout(toast._hideTimer);
+    toast._hideTimer = setTimeout(() => { toast.style.display = "none"; }, 6000);
+  }
+
+  // Microsoft Edge TTS সার্ভার এন্ডপয়েন্ট কল করে; নেটওয়ার্ক ব্যর্থতায় কয়েকবার রিট্রাই করে।
+  // সফল হলে অডিও Blob রিটার্ন করে, সব চেষ্টা ব্যর্থ হলে null রিটার্ন করে (silent fail নয় — caller UI-তে জানায়)।
+  async function _fetchVoiceBlob(clean) {
+    const MAX_CLIENT_ATTEMPTS = 3;
+    let lastErr = null;
+    for (let i = 0; i < MAX_CLIENT_ATTEMPTS; i++) {
+      try {
+        const r = await fetch(api("/voice"), {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ text: clean.slice(0, 3000), gender: settings.voiceGender || "female" }),
+        });
+        if (r.status === 204) return null; // খালি টেক্সট — বলার কিছু নেই
+        if (r.ok) {
+          const blob = await r.blob();
+          if (blob.size > 100) return blob;
+          lastErr = new Error("empty audio blob");
+        } else {
+          lastErr = new Error(`voice endpoint status ${r.status}`);
+        }
+      } catch (e) {
+        lastErr = e;
+      }
+      if (i < MAX_CLIENT_ATTEMPTS - 1) await new Promise(res => setTimeout(res, 400));
+    }
+    console.error("Voice fetch failed after retries:", lastErr);
+    return undefined; // undefined = সব চেষ্টা ব্যর্থ (204-এর null থেকে আলাদা করার জন্য)
+  }
+
   async function speak(text, btn = null) {
     if (!text || !text.trim()) return;
     _ensureAudioCtx();
@@ -398,59 +444,29 @@ PARISA MEMORY PORTAL এ আপনাকে স্বাগতম।
 
     currentSpeakBtn = btn;
 
-    // ── PRIMARY: Server Microsoft Edge TTS (NabanitaNeural / PradeepNeural) ──
-    try {
-      const r = await fetch(api("/voice"), {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ text: clean.slice(0, 3000), gender: settings.voiceGender || "female" }),
-      });
-      if (r.ok && r.status !== 204) {
-        const blob = await r.blob();
-        if (blob.size > 100) {
-          const url = URL.createObjectURL(blob);
-          currentAudio = new Audio(url);
-          currentAudio.onended = () => { currentAudio = null; currentSpeakBtn = null; URL.revokeObjectURL(url); _resetSpeakBtn(btn); };
-          currentAudio.onerror = () => { currentAudio = null; currentSpeakBtn = null; URL.revokeObjectURL(url); _resetSpeakBtn(btn); };
-          try {
-            if (_audioCtx) await _audioCtx.resume();
-            await currentAudio.play();
-            if (btn) btn.innerHTML = `<svg class="ic"><use href="#i-volume"/></svg> চলছে`;
-          } catch (playErr) {
-            if (playErr.name === "NotAllowedError" || playErr.name === "NotSupportedError") {
-              _showPlayToast(currentAudio, url, btn);
-            } else {
-              currentAudio = null; currentSpeakBtn = null; URL.revokeObjectURL(url); _resetSpeakBtn(btn);
-            }
-          }
-          return;
-        }
-      }
-    } catch { /* network error → browser fallback */ }
+    const blob = await _fetchVoiceBlob(clean);
+    if (blob === null) { currentSpeakBtn = null; _resetSpeakBtn(btn); return; }
+    if (blob === undefined) {
+      currentSpeakBtn = null; _resetSpeakBtn(btn);
+      _showErrorToast("⚠️ ভয়েস তৈরি করা যায়নি, আবার চেষ্টা করুন");
+      return;
+    }
 
-    // ── FALLBACK: Browser speechSynthesis ──
-    if (!("speechSynthesis" in window)) { currentSpeakBtn = null; _resetSpeakBtn(btn); return; }
-    const doUtter = () => {
-      const utter = new SpeechSynthesisUtterance(clean);
-      utter.lang  = "bn-BD";
-      utter.rate  = 1.0;
-      utter.pitch = settings.voiceGender === "male" ? 0.72 : 1.15;
-      const voices = speechSynthesis.getVoices();
-      const bn = voices.find(v => v.lang === "bn-BD") ||
-                 voices.find(v => v.lang === "bn-IN") ||
-                 voices.find(v => v.lang.startsWith("bn"));
-      if (bn) utter.voice = bn;
+    const url = URL.createObjectURL(blob);
+    currentAudio = new Audio(url);
+    currentAudio.onended = () => { currentAudio = null; currentSpeakBtn = null; URL.revokeObjectURL(url); _resetSpeakBtn(btn); };
+    currentAudio.onerror = () => { currentAudio = null; currentSpeakBtn = null; URL.revokeObjectURL(url); _resetSpeakBtn(btn); _showErrorToast("⚠️ ভয়েস চালানো যায়নি"); };
+    try {
+      if (_audioCtx) await _audioCtx.resume();
+      await currentAudio.play();
       if (btn) btn.innerHTML = `<svg class="ic"><use href="#i-volume"/></svg> চলছে`;
-      utter.onend  = () => { currentUtter = null; currentSpeakBtn = null; _resetSpeakBtn(btn); };
-      utter.onerror = () => { currentUtter = null; currentSpeakBtn = null; _resetSpeakBtn(btn); };
-      currentUtter = utter;
-      speechSynthesis.speak(utter);
-    };
-    if (speechSynthesis.getVoices().length > 0) { doUtter(); }
-    else {
-      let _fired = false;
-      speechSynthesis.onvoiceschanged = () => { speechSynthesis.onvoiceschanged = null; if (!_fired) { _fired = true; doUtter(); } };
-      setTimeout(() => { if (!_fired) { _fired = true; doUtter(); } }, 300);
+    } catch (playErr) {
+      if (playErr.name === "NotAllowedError" || playErr.name === "NotSupportedError") {
+        _showPlayToast(currentAudio, url, btn);
+      } else {
+        currentAudio = null; currentSpeakBtn = null; URL.revokeObjectURL(url); _resetSpeakBtn(btn);
+        _showErrorToast("⚠️ ভয়েস চালানো যায়নি");
+      }
     }
   }
 
@@ -460,51 +476,19 @@ PARISA MEMORY PORTAL এ আপনাকে স্বাগতম।
     const clean = stripForTTS(text);
     if (!clean) return;
     if (statusEl) statusEl.innerHTML = `বলছি… <span class="tts-dots"><span></span><span></span><span></span></span>`;
-    // ── PRIMARY: Server Microsoft Edge TTS ──
-    try {
-      const r = await fetch(api("/voice"), {
-        method: "POST", headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ text: clean.slice(0, 3000), gender: settings.voiceGender || "female" }),
-      });
-      if (r.ok && r.status !== 204) {
-        const blob = await r.blob();
-        if (blob.size > 100) {
-          const url = URL.createObjectURL(blob);
-          currentAudio = new Audio(url);
-          await new Promise(res => {
-            currentAudio.onended = () => { currentAudio = null; URL.revokeObjectURL(url); res(); };
-            currentAudio.onerror = () => { currentAudio = null; URL.revokeObjectURL(url); res(); };
-            currentAudio.play();
-          });
-          return;
-        }
-      }
-    } catch { /* server unreachable → browser fallback */ }
 
-    // ── FALLBACK: Browser speechSynthesis ──
-    if (!("speechSynthesis" in window)) return;
+    const blob = await _fetchVoiceBlob(clean);
+    if (!blob) {
+      if (blob === undefined) _showErrorToast("⚠️ ভয়েস তৈরি করা যায়নি, আবার চেষ্টা করুন");
+      return;
+    }
+
+    const url = URL.createObjectURL(blob);
+    currentAudio = new Audio(url);
     await new Promise(res => {
-      const doUtter = () => {
-        const utter = new SpeechSynthesisUtterance(clean);
-        utter.lang  = "bn-BD";
-        utter.rate  = 1.0;
-        utter.pitch = settings.voiceGender === "male" ? 0.72 : 1.15;
-        const voices = speechSynthesis.getVoices();
-        const bn = voices.find(v => v.lang === "bn-BD") ||
-                   voices.find(v => v.lang === "bn-IN") ||
-                   voices.find(v => v.lang.startsWith("bn"));
-        if (bn) utter.voice = bn;
-        utter.onend  = () => { currentUtter = null; res(); };
-        utter.onerror = () => { currentUtter = null; res(); };
-        currentUtter = utter;
-        speechSynthesis.speak(utter);
-      };
-      if (speechSynthesis.getVoices().length > 0) { doUtter(); }
-      else {
-        let _f2 = false;
-        speechSynthesis.onvoiceschanged = () => { speechSynthesis.onvoiceschanged = null; if (!_f2) { _f2 = true; doUtter(); } };
-        setTimeout(() => { if (!_f2) { _f2 = true; doUtter(); } }, 300);
-      }
+      currentAudio.onended = () => { currentAudio = null; URL.revokeObjectURL(url); res(); };
+      currentAudio.onerror = () => { currentAudio = null; URL.revokeObjectURL(url); res(); };
+      currentAudio.play().catch(() => { currentAudio = null; URL.revokeObjectURL(url); res(); });
     });
   }
 
