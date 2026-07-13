@@ -18,7 +18,7 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const publicDir = path.join(__dirname, "public");
 
 // ভার্সন ফরম্যাট: V-<n> — প্রতিটি নতুন আপডেটে n ঠিক ১ করে বাড়বে (package.json-এর semver থেকে স্বাধীন)
-const APP_VERSION = "V-16";
+const APP_VERSION = "V-17";
 
 const app = express();
 app.use(cors());
@@ -789,7 +789,8 @@ function cleanForTTS(text) {
 }
 
 async function streamTTS(tts, inputText, isSSML = false) {
-  const audioStream = isSSML ? tts.rawToStream(inputText) : tts.toStream(inputText);
+  // msedge-tts v2.x: toStream()/rawToStream() রিটার্ন করে { audioStream, metadataStream } অবজেক্ট
+  const { audioStream } = isSSML ? tts.rawToStream(inputText) : tts.toStream(inputText);
   const chunks = [];
   await new Promise((resolve) => {
     audioStream.on("data",  (d) => chunks.push(d));
@@ -825,12 +826,14 @@ function buildEmotionalSSML(cleanText, voiceName) {
 async function synthesizeVoiceRobust(clean, voiceName) {
   if (!MsEdgeTTS) throw new Error("msedge-tts module not loaded");
 
+  // msedge-tts v2.x-এ MP3-সামঞ্জস্যপূর্ণ ফরম্যাট মাত্র দুটো (48k/96k) — তাই ফরম্যাট ও
+  // SSML/plain-টেক্সট সমন্বয়ে ৫ বার ভিন্নভাবে চেষ্টা করা হয়, যাতে ট্রানজিয়েন্ট সমস্যাতেও ভয়েস আসে।
   const attempts = [
     { ssml: true,  format: OUTPUT_FORMAT.AUDIO_24KHZ_96KBITRATE_MONO_MP3 },
     { ssml: true,  format: OUTPUT_FORMAT.AUDIO_24KHZ_48KBITRATE_MONO_MP3 },
     { ssml: false, format: OUTPUT_FORMAT.AUDIO_24KHZ_48KBITRATE_MONO_MP3 },
-    { ssml: false, format: OUTPUT_FORMAT.AUDIO_16KHZ_64KBITRATE_MONO_MP3 },
-    { ssml: false, format: OUTPUT_FORMAT.AUDIO_16KHZ_32KBITRATE_MONO_MP3 },
+    { ssml: false, format: OUTPUT_FORMAT.AUDIO_24KHZ_96KBITRATE_MONO_MP3 },
+    { ssml: true,  format: OUTPUT_FORMAT.AUDIO_24KHZ_96KBITRATE_MONO_MP3 },
   ];
 
   let lastErr = null;
