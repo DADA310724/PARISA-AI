@@ -126,13 +126,13 @@ import { readFileSync, existsSync } from "fs";
 
 let GLOBAL_TIMELINE = [];
 try {
-  const tlPath = path.join(__dirname, "attached_assets", "parisa_global_timeline_1783954223084.json");
+  const tlPath = path.join(__dirname, "chat_database.json");
   if (existsSync(tlPath)) {
     const tlData = JSON.parse(readFileSync(tlPath, "utf-8"));
     GLOBAL_TIMELINE = Array.isArray(tlData) ? tlData : (tlData.messages || []);
     console.log(`✅ Global Timeline DB loaded — ${GLOBAL_TIMELINE.length} messages`);
   } else {
-    console.warn("⚠️ Global timeline file not found");
+    console.warn("⚠️ chat_database.json not found");
   }
 } catch(e) {
   console.warn("Global Timeline DB load error:", e.message);
