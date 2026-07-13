@@ -64,7 +64,7 @@
     <div class="side-foot">
       <button class="side-btn" id="openSettings">
         <span style="display:inline-flex;align-items:center;gap:10px"><svg class="ic"><use href="#i-gear"/></svg> সেটিংস</span>
-        <span class="side-version">V-17</span>
+        <span class="side-version">V-18</span>
       </button>
       <div class="side-dev">
         <span class="side-dev-text">THIS APPS DEVELOPMENT BY <span class="dev-dada">DADA</span></span>
@@ -198,22 +198,19 @@
   <div class="call-bg"></div>
   <div class="call-header">
     <div class="call-name">PARISA</div>
+    <div class="call-status" id="audioCallStatus">শুনছি…</div>
   </div>
-  <div class="avatar-wrap" id="avatarWrap">
-    <div class="avatar-ring ar1"></div>
-    <div class="avatar-ring ar2"></div>
-    <div class="avatar-ring ar3"></div>
-    <div class="avatar-glow"></div>
-    <div class="avatar-circle" id="avatarCircle">
-      <img src="logo.jpg" alt="PARISA" class="avatar-photo" id="avatarPhoto" />
-    </div>
+  <!-- Glowing orb — central visual -->
+  <div class="call-orb listening" id="callOrb">
+    <div class="orb-ring r1"></div>
+    <div class="orb-ring r2"></div>
+    <div class="orb-ring r3"></div>
+    <div class="orb-core" id="orbCore"></div>
   </div>
-  <div class="audio-wave" id="audioWave">
-    <span></span><span></span><span></span><span></span><span></span>
-    <span></span><span></span><span></span><span></span><span></span>
-  </div>
+  <!-- User speech caption (top, smaller) -->
+  <div class="user-caption" id="userCaption"></div>
+  <!-- AI response caption (bottom, larger, word-by-word) -->
   <div class="call-caption" id="audioCallCaption"></div>
-  <div class="call-status sm" id="audioCallStatus">কানেক্টেড</div>
   <div class="call-controls-row">
     <button class="ctrl-btn mute" id="muteAudioCall">
       <svg class="ic"><use href="#i-mic"/></svg>
@@ -245,6 +242,8 @@
         </div>
       </div>
     </div>
+    <!-- User speech caption for video call -->
+    <div class="user-caption vc-user-caption" id="vcUserCaption"></div>
     <div class="call-caption" id="videoCallCaption"></div>
     <div class="call-controls-row">
       <button class="ctrl-btn mute" id="muteVideoCall">

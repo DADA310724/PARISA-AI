@@ -738,10 +738,30 @@ PARISA MEMORY PORTAL এ আপনাকে স্বাগতম।
   $("#muteAudioCall").onclick = () => { if (callRecognizer) callRecognizer.stop(); };
 
   function setWave(state, id = "audioWave") {
+    // Wave element (video call uses vcAiWave)
     const el = document.getElementById(id);
+    if (el) { el.classList.remove("idle","listening","talking"); el.classList.add(state); }
+    // Glowing orb (audio call)
+    const orb = document.getElementById("callOrb");
+    if (orb) { orb.classList.remove("idle","listening","talking"); orb.classList.add(state); }
+  }
+
+  // ── User speech caption (what user says during call) ─────────────
+  let _userCapTimer = null;
+  function updateUserCaption(text, elId = "userCaption") {
+    const el = document.getElementById(elId);
     if (!el) return;
-    el.classList.remove("idle", "listening", "talking");
-    el.classList.add(state);
+    if (!text || !text.trim()) {
+      el.style.opacity = "0";
+      if (_userCapTimer) clearTimeout(_userCapTimer);
+      _userCapTimer = setTimeout(() => { if (el.style.opacity === "0") el.textContent = ""; }, 380);
+      return;
+    }
+    el.textContent = text.trim();
+    el.style.opacity = "1";
+    // Auto-fade 3 s after last update
+    if (_userCapTimer) clearTimeout(_userCapTimer);
+    _userCapTimer = setTimeout(() => updateUserCaption("", elId), 3000);
   }
 
   async function startAudioCall() {
@@ -749,7 +769,8 @@ PARISA MEMORY PORTAL এ আপনাকে স্বাগতম।
     callOn = true;
     $("#audioCallView").classList.add("is-open");
     $("#audioCallStatus").textContent = "শুনছি…";
-    $("#audioCallCaption").textContent = "";
+    $("#audioCallCaption").innerHTML = "";
+    updateUserCaption("", "userCaption");
     setWave("listening");
     callLoop();
   }
@@ -780,11 +801,12 @@ PARISA MEMORY PORTAL এ আপনাকে স্বাগতম।
       buffer = "";
       if (!said || !callOn || _callSeq !== mySeq) return;
       aiReplying = true;
+      updateUserCaption("", "userCaption");   // user caption fade out
       setWave("talking");
       $("#audioCallStatus").textContent = "ভাবছি…";
       const reply = await callChat(said);
       if (!callOn || _callSeq !== mySeq) { aiReplying = false; return; }
-      updateCaption($("#audioCallCaption"), reply);
+      updateCaption($("#audioCallCaption"), reply);   // AI caption (word-by-word)
       setWave("talking");
       await speakAndWait(reply, $("#audioCallStatus"));
       aiReplying = false;
@@ -805,12 +827,15 @@ PARISA MEMORY PORTAL এ আপনাকে স্বাগতম।
         const t = e.results[i][0].transcript;
         if (e.results[i].isFinal) buffer += t; else interim += t;
       }
+      // Barge-in: user started talking while AI is speaking
       if (interim.trim() && (currentAudio || currentUtter)) {
         _stopAll(); aiReplying = false;
+        updateCaption($("#audioCallCaption"), "");
         setWave("listening");
         $("#audioCallStatus").textContent = "শুনছি…";
       }
-      updateCaption($("#audioCallCaption"), buffer + interim);
+      // Show user speech in top caption (smaller, italic)
+      updateUserCaption(buffer + interim, "userCaption");
       if (silenceTimer) clearTimeout(silenceTimer);
       if (buffer.trim() || interim.trim()) silenceTimer = setTimeout(handleSend, 1500);
     };
@@ -889,6 +914,7 @@ PARISA MEMORY PORTAL এ আপনাকে স্বাগতম।
       buffer = "";
       if (!said || !vcOn || _vcSeq !== mySeq) return;
       aiReplying = true;
+      updateUserCaption("", "vcUserCaption");   // user caption fade out
       $("#videoCallStatus").textContent = "ভাবছি…";
       const img = snapshot($("#videoCallVideo"), $("#videoCallCanvas"));
       try {
@@ -920,11 +946,14 @@ PARISA MEMORY PORTAL এ আপনাকে স্বাগতম।
         const t = e.results[i][0].transcript;
         if (e.results[i].isFinal) buffer += t; else interim += t;
       }
+      // Barge-in: stop AI audio, clear AI caption
       if (interim.trim() && (currentAudio || currentUtter)) {
         _stopAll(); aiReplying = false;
+        updateCaption($("#videoCallCaption"), "");
         $("#videoCallStatus").textContent = "কানেক্টেড";
       }
-      updateCaption($("#videoCallCaption"), buffer + interim);
+      // Show user speech in top caption (smaller, italic)
+      updateUserCaption(buffer + interim, "vcUserCaption");
       if (silenceTimer) clearTimeout(silenceTimer);
       if (buffer.trim() || interim.trim()) silenceTimer = setTimeout(handleSend, 1500);
     };

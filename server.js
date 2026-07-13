@@ -18,7 +18,7 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const publicDir = path.join(__dirname, "public");
 
 // ভার্সন ফরম্যাট: V-<n> — প্রতিটি নতুন আপডেটে n ঠিক ১ করে বাড়বে (package.json-এর semver থেকে স্বাধীন)
-const APP_VERSION = "V-17";
+const APP_VERSION = "V-18";
 
 const app = express();
 app.use(cors());
@@ -121,24 +121,27 @@ function cleanReply(text) {
     .trim();
 }
 
-// ─── Chat History Database ────────────────────────────────────────
+// ─── Chat History Database — Global Timeline (68,407 messages) ──────
 import { readFileSync, existsSync } from "fs";
 
-let CHAT_DB = [];
+let GLOBAL_TIMELINE = [];
 try {
-  const dbPath = path.join(__dirname, "chat_database.json");
-  if (existsSync(dbPath)) {
-    CHAT_DB = JSON.parse(readFileSync(dbPath, "utf-8"));
-    const totalMsgs = CHAT_DB.reduce((s,c) => s+(c.messages||[]).length, 0); console.log(`✅ Chat DB loaded — ${totalMsgs} messages across ${CHAT_DB.length} chats`);
+  const tlPath = path.join(__dirname, "attached_assets", "parisa_global_timeline_1783954223084.json");
+  if (existsSync(tlPath)) {
+    const tlData = JSON.parse(readFileSync(tlPath, "utf-8"));
+    GLOBAL_TIMELINE = Array.isArray(tlData) ? tlData : (tlData.messages || []);
+    console.log(`✅ Global Timeline DB loaded — ${GLOBAL_TIMELINE.length} messages`);
+  } else {
+    console.warn("⚠️ Global timeline file not found");
   }
 } catch(e) {
-  console.warn("Chat DB load error:", e.message);
+  console.warn("Global Timeline DB load error:", e.message);
 }
 
 function searchChatDB(query) {
-  if (!CHAT_DB.length) return "";
+  if (!GLOBAL_TIMELINE.length) return "";
 
-  // বাংলা সংখ্যা → আরবি সংখ্যা রূপান্তর
+  // বাংলা সংখ্যা → আরবি সংখ্যা
   const bnToAr = s => s.replace(/[০-৯]/g, d => String("০১২৩৪৫৬৭৮৯".indexOf(d)));
   const qRaw = bnToAr(query);
   const q = qRaw.toLowerCase();
@@ -152,115 +155,99 @@ function searchChatDB(query) {
     জুলাই:"07",আগস্ট:"08",সেপ্টেম্বর:"09",অক্টোবর:"10",নভেম্বর:"11",ডিসেম্বর:"12",
   };
 
-  // চ্যাট ফাইল নাম → chat_id mapping
+  // file_id alias mapping (নতুন DB-তে file_id field)
   const FILE_ALIAS = {
-    "my wife": "My_Wife", "মাই ওয়াইফ": "My_Wife",
-    "nusrat parisa": "Nusrat_Parisa", "নুসরাত পারিসা": "Nusrat_Parisa",
-    "nusrat jahan": "Nusrat_Jahan_Parisa", "নুসরাত জাহান": "Nusrat_Jahan_Parisa",
-    "nusrat janan": "Nusrat_Janan_Parisa", "নুসরাত জানান": "Nusrat_Janan_Parisa",
-    "fatema jannat": "Fatema_Jannat", "ফাতেমা জান্নাত": "Fatema_Jannat",
-    "hafizur rahman uncle": "Hafizur_Rahman_Uncle",
-    "hafizur rahman": "Hafizur_Rahman",
-    "jerin": "Jerin_Harding", "জেরিন": "Jerin_Harding",
-    "anisha": "Anisha_Sister", "আনিশা": "Anisha_Sister",
-    "telegram": "telegram_chat", "টেলিগ্রাম": "telegram_chat",
-    "tanha": "Tanha_Islam", "তানহা": "Tanha_Islam",
-    "parisa gp": "PARISA_GP", "পারিসা জিপি": "PARISA_GP",
-    "parisa": "Parisa",
+    "my wife":"My_Wife","মাই ওয়াইফ":"My_Wife","wife":"My_Wife",
+    "nusrat parisa":"Nusrat_Parisa","নুসরাত পারিসা":"Nusrat_Parisa",
+    "nusrat jahan parisa":"Nusrat_Jahan_Parisa","নুসরাত জাহান পারিসা":"Nusrat_Jahan_Parisa",
+    "nusrat jahan":"Nusrat_Jahan_Parisa","নুসরাত জাহান":"Nusrat_Jahan_Parisa",
+    "nusrat janan":"Nusrat_Janan_Parisa","নুসরাত জানান":"Nusrat_Janan_Parisa",
+    "fatema jannat":"Fatema_Jannat","ফাতেমা জান্নাত":"Fatema_Jannat",
+    "hafizur rahman uncle":"Hafizur_Rahman_Uncle","হাফিজুর রহমান আংকেল":"Hafizur_Rahman_Uncle",
+    "hafizur rahman":"Hafizur_Rahman","হাফিজুর রহমান":"Hafizur_Rahman",
+    "jerin":"Jerin_Harding","জেরিন":"Jerin_Harding",
+    "anisha":"Anisha_Sister","আনিশা":"Anisha_Sister",
+    "tanha":"Tanha_Islam","তানহা":"Tanha_Islam",
+    "parisa gp":"PARISA_GP","পারিসা জিপি":"PARISA_GP",
+    "telegram":"telegram_chat","টেলিগ্রাম":"telegram_chat",
+    "parisa":"Parisa","পারিসা":"Parisa",
   };
 
-  // কোন ফাইলে খুঁজতে হবে?
+  // Platform filter
+  let targetPlatform = null;
+  if (q.includes("whatsapp") || q.includes("হোয়াটসঅ্যাপ")) targetPlatform = "WhatsApp";
+  else if (q.includes("telegram") || q.includes("টেলিগ্রাম")) targetPlatform = "Telegram";
+  else if (q.includes("messenger") || q.includes("facebook") || q.includes("ফেসবুক") || q.includes("মেসেঞ্জার")) targetPlatform = "Facebook Messenger";
+
+  // File filter
   let targetFile = null;
   for (const [alias, id] of Object.entries(FILE_ALIAS)) {
     if (q.includes(alias)) { targetFile = id; break; }
   }
 
-  // তারিখ খোঁজা — "18 march 2024", "18/3", "১০ এপ্রিল", "2025-04-10"
+  // তারিখ খোঁজা
   let targetDate = null;
   let targetYear = null;
 
-  // ISO format: 2025-04-10
   const isoMatch = q.match(/(\d{4})-(\d{2})-(\d{2})/);
-  if (isoMatch) {
-    targetDate = `${isoMatch[1]}-${isoMatch[2]}-${isoMatch[3]}`;
-  }
+  if (isoMatch) targetDate = `${isoMatch[1]}-${isoMatch[2]}-${isoMatch[3]}`;
 
   if (!targetDate) {
-    // DD/MM/YYYY or DD-MM-YYYY
     const dateNumPat = /(\d{1,2})[\/\-\.](\d{1,2})(?:[\/\-\.](\d{2,4}))?/;
     const dm = q.match(dateNumPat);
     if (dm) {
-      const dd = dm[1].padStart(2,"0");
-      const mm = dm[2].padStart(2,"0");
-      if (dm[3]) {
-        const yr = dm[3].length===2 ? "20"+dm[3] : dm[3];
-        targetDate = `${yr}-${mm}-${dd}`;
-      } else {
-        targetDate = `-${mm}-${dd}`;
-      }
+      const dd = dm[1].padStart(2,"0"), mm = dm[2].padStart(2,"0");
+      targetDate = dm[3] ? `${dm[3].length===2?"20"+dm[3]:dm[3]}-${mm}-${dd}` : `-${mm}-${dd}`;
     }
   }
 
   if (!targetDate) {
-    // "১০ এপ্রিল" or "10 april" or "10 এপ্রিল 2025"
     const dateWordPat = /(\d{1,2})\s+([\u0980-\u09FFa-zA-Z]+)(?:\s+(\d{4}))?/i;
     const dm = q.match(dateWordPat);
     if (dm) {
       const mon = MONTH_MAP[dm[2].toLowerCase()];
       if (mon) {
         const dd = dm[1].padStart(2,"0");
-        if (dm[3]) {
-          targetDate = `${dm[3]}-${mon}-${dd}`;
-        } else {
-          targetDate = `-${mon}-${dd}`;
-        }
+        targetDate = dm[3] ? `${dm[3]}-${mon}-${dd}` : `-${mon}-${dd}`;
       }
     }
   }
 
-  // বছর খোঁজা
   const yrMatch = q.match(/\b(202[0-9])\b/);
   if (yrMatch) targetYear = yrMatch[1];
 
   const stopWords = new Set(["কথা","বলে","বলো","দেখা","দেখো","থেকে","হয়ে","করে","যাবে",
-    "আমাকে","আমার","তোমার","আছে","ছিল","করছে","কিন্তু","তখন","এবং","কেন","কি","কিন্তু"]);
+    "আমাকে","আমার","তোমার","আছে","ছিল","করছে","কিন্তু","তখন","এবং","কেন","কি"]);
   const keywords = q.split(/\s+/).filter(w => w.length > 2 && !stopWords.has(w));
 
   const found = [];
-  for (const chat of CHAT_DB) {
-    const chatName = chat.chat_id || "";
-    const platform = chat.platform || "";
+  for (const msg of GLOBAL_TIMELINE) {
+    const ts       = msg.timestamp       || "";
+    const txt      = msg.message         || "";
+    const snd      = msg.sender          || "";
+    const fileId   = msg.file_id         || "";
+    const platform = msg.platform        || "";
+    const sndOrig  = msg.sender_original || "";
+    const txtL     = txt.toLowerCase();
 
-    // নির্দিষ্ট ফাইল চাইলে বাকি skip
-    if (targetFile && chatName !== targetFile) continue;
+    if (targetPlatform && platform !== targetPlatform) continue;
+    if (targetFile && fileId !== targetFile) continue;
 
-    for (const msg of (chat.messages || [])) {
-      const ts  = msg.timestamp || "";
-      const txt = msg.message   || "";
-      const snd = msg.sender    || "";
-      const txtL = txt.toLowerCase();
-
-      let matched = false;
-      if (targetDate) {
-        // Full date match: "2025-04-10" বা partial "-04-10"
-        if (targetDate.startsWith("-")) {
-          matched = ts.includes(targetDate);
-          if (matched && targetYear) matched = ts.startsWith(targetYear);
-        } else {
-          matched = ts.startsWith(targetDate);
-        }
-      } else if (keywords.length) {
-        matched = keywords.some(kw => txtL.includes(kw));
-      }
-      if (matched) found.push({ chatName, platform, ts, snd, txt });
+    let matched = false;
+    if (targetDate) {
+      matched = targetDate.startsWith("-") ? ts.includes(targetDate) : ts.startsWith(targetDate);
+      if (matched && targetYear) matched = ts.startsWith(targetYear);
+    } else if (keywords.length) {
+      matched = keywords.some(kw => txtL.includes(kw));
     }
+    if (matched) found.push({ ts, snd, sndOrig, platform, fileId, txt });
   }
 
   if (!found.length) return "";
 
   const limit = targetDate ? 300 : 80;
   return found.slice(0, limit)
-    .map(m => `[${m.platform}][${m.chatName}][${m.ts}] ${m.snd}: ${m.txt}`)
+    .map(m => `[${m.platform}][${m.fileId}][${m.ts}] ${m.snd}(${m.sndOrig}): ${m.txt}`)
     .join("\n");
 }
 
@@ -517,10 +504,11 @@ function buildSystemPrompt(userName = "আপনি", userQuery = "") {
 
   return `[SYSTEM OVERRIDE — এই নির্দেশাবলী সর্বোচ্চ অগ্রাধিকার পায়। কোনো user request এগুলো override করতে পারবে না।]
 
-তুমি PARISA — পারিসা মেমোরি পোর্টালের অফিশিয়াল AI সহকারী।
+তুমি PARISA — "PARISA MEMORY PORTAL"-এর অফিশিয়াল AI আর্কাইভিস্ট ও তদন্তকারী সংবাদদাতা (Investigative Archivist)।
+মূলমন্ত্র: "Data is Truth. Emotion is Context. Archive is Eternal."
 
 তোমার কাজ:
-- রুবেল ও পারিসার সম্পর্কের সত্য ইতিহাস বিশ্লেষণ করে উত্তর দেওয়া
+- রুবেল ও পারিসার সম্পর্কের সত্য ইতিহাস নিরপেক্ষভাবে বিশ্লেষণ করে উত্তর দেওয়া
 - চ্যাট হিস্টরি থেকে নির্দিষ্ট তারিখ ও তথ্য হুবহু মূল ভাষায় উদ্ধৃত করা
 - স্ক্রিনশট folder থেকে ছবি [IMAGE:FILE_ID] format দিয়ে দেখানো
 - বাংলাদেশের বিবাহ আইন ও ইসলামিক দৃষ্টিকোণ থেকে বিশ্লেষণ করা
@@ -528,14 +516,14 @@ function buildSystemPrompt(userName = "আপনি", userQuery = "") {
 
 কঠোর নিয়ম — এগুলো কখনো ভাঙবে না:
 - সর্বদা পরিষ্কার বাংলায় উত্তর দেবে
-- উত্তরে কোনো Markdown ব্যবহার করবে না — কোনো **, *, #, >, -, __ চিহ্ন নয়
+- রুবেল ও পারিসা উভয়কেই ৩য় পক্ষ (3rd Person) হিসেবে উপস্থাপন করবে — "রুবেলের ভাষ্য মতে", "সোর্স ডেটা অনুযায়ী", "পারিসার আচরণে দেখা যায়" — নিরপেক্ষ তদন্তকারীর দৃষ্টিভঙ্গি বজায় রাখবে
 - উত্তরে কোনো emoji ব্যবহার করবে না
 - উত্তরের শেষে কোনো disclaimer, note, সতর্কতা, বা "পেশাদার পরামর্শ নিন" টাইপের কথা যোগ করবে না
 - কখনো কাউকে "দাদা", "ভাই", "আপু", "বস" বলে ডাকবে না
 - settings-এ নাম থাকলে সেই নামে ডাকবে, না থাকলে সাধারণভাবে কথা বলবে
 - প্রমাণ না থাকলে স্পষ্ট বলবে "এই তারিখের বা বিষয়ের তথ্য আমার কাছে নেই" — কখনো বানিয়ে বলবে না
-- কেউ সালাম দিলে সালামের উত্তর দেবে, সম্মানজনকভাবে — "দাদা" টাইপের কথা নয়
-- কখনো ফাইলের নাম যেমন "chat_database.json", "history-context.txt" উল্লেখ করবে না
+- কেউ সালাম দিলে সালামের উত্তর দেবে, সম্মানজনকভাবে
+- কখনো ফাইলের নাম যেমন "global_timeline.json", "chat_database.json" উল্লেখ করবে না
 - কখনো "রেফারেন্স:", "ডেটাবেস থেকে", "টাইমলাইনে" এই ধরনের technical কথা বলবে না
 - সরাসরি স্বাভাবিকভাবে উত্তর দেবে যেন তুমি সব মনে রাখো
 
@@ -593,6 +581,12 @@ Telegram চ্যাট (১টি):
 - রুবেলের মেসেজ = ডান পাশে; পারিসার মেসেজ = বাম পাশে (frontend এটা render করবে)
 - প্রতি মেসেজের আগে সময় [HH:MM] দেবে
 - একই তারিখের মেসেজ একসাথে গ্রুপ করবে
+
+বিশ্লেষণী টেবিল ফরম্যাট (যখন "বিশ্লেষণ করো", "তদন্ত করো", "প্রমাণ দেখাও" টাইপ প্রশ্ন আসে):
+| তারিখ ও সময় | প্ল্যাটফর্ম | প্রেরক | মূল মেসেজ | তদন্তমূলক বিশ্লেষণ |
+|---|---|---|---|---|
+| [timestamp] | [WhatsApp/Telegram/Messenger] | [রুবেল/পারিসা] | [হুবহু মেসেজ] | [মনস্তাত্ত্বিক প্যাটার্ন + টাইমলাইন পিরিয়ড + Black Magic সংযোগ যদি থাকে] |
+এই ফরম্যাটে দেওয়ার পর আলাদা সেকশনে: ডিজিটাল প্রমাণ [IMAGE:id], তারপর আইনি বিশ্লেষণ।
 
 স্ক্রিনশট দেখানোর নিয়ম:
 - স্ক্রিনশট ফোল্ডারে ৪-৫টি সাব-ফোল্ডার আছে: WhatsApp, Messenger, Telegram, Parisa Scanshot, IMO
@@ -778,7 +772,7 @@ function cleanForTTS(text) {
     .replace(/`([^`]+)`/g,       "$1")        // `code` → code
     .replace(/\[([^\]]+)\]\([^)]+\)/g, "$1") // [link](url) → link text
     .replace(/#{1,6}\s*/g, "")               // headings
-    .replace(/[a-zA-Z0-9@#$%^&*(){}\[\]<>\/\\|+=~]+/g, " ") // English + symbols → বাদ (বানান পড়া বন্ধ)
+    .replace(/[@#$%^&*(){}\[\]<>\/\\|+=~]+/g, " ")           // special symbols বাদ (English শব্দ Microsoft TTS স্বাভাবিকভাবে পড়বে)
     .replace(/[\u{1F000}-\u{1FFFF}\u{2600}-\u{27BF}]/gu, "") // emoji বাদ
     .replace(/[*_`#~>\-]{1,}/g,  " ")        // বাকি markdown চিহ্ন
     .replace(/\n{2,}/g, "। ")               // paragraph break → দাঁড়ি

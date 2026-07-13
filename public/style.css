@@ -836,3 +836,100 @@ textarea, input, select { font-family: inherit; color: inherit; }
 #videoCallView .call-caption {
   bottom: 130px;
 }
+
+/* ══ Orb state animations ══════════════════════════════════════════ */
+.call-orb.listening .orb-ring { animation-duration: 3s; }
+.call-orb.listening .orb-core {
+  animation: pulse 2.4s ease-in-out infinite;
+  box-shadow: 0 0 40px rgba(95,232,255,.45), inset 0 0 30px rgba(255,255,255,.25);
+}
+.call-orb.talking .orb-ring { animation-duration: 1.4s; }
+.call-orb.talking .orb-core {
+  animation: orbTalk 0.28s ease-in-out infinite alternate;
+  box-shadow: 0 0 70px rgba(95,232,255,.9), inset 0 0 40px rgba(255,255,255,.45);
+}
+.call-orb.idle .orb-core {
+  animation: pulse 4s ease-in-out infinite;
+  box-shadow: 0 0 20px rgba(95,232,255,.2), inset 0 0 20px rgba(255,255,255,.1);
+}
+@keyframes orbTalk {
+  0%   { transform: scale(1);    filter: brightness(1); }
+  100% { transform: scale(1.09); filter: brightness(1.25); }
+}
+
+/* ══ User speech caption (what user says during call) ═══════════════ */
+.user-caption {
+  position: absolute;
+  left: 50%;
+  transform: translateX(-50%);
+  bottom: 205px;
+  width: min(88vw, 380px);
+  text-align: center;
+  padding: 7px 16px;
+  background: rgba(95, 232, 255, 0.08);
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
+  border-radius: 20px;
+  border: 1px solid rgba(95, 232, 255, 0.18);
+  color: rgba(200, 245, 255, 0.75);
+  font-size: 13px;
+  font-family: 'Hind Siliguri', 'Noto Sans Bengali', sans-serif;
+  font-style: italic;
+  line-height: 1.45;
+  pointer-events: none;
+  z-index: 9;
+  transition: opacity 0.35s ease;
+  min-height: 0;
+}
+.user-caption:empty { opacity: 0 !important; }
+.vc-user-caption { bottom: 220px; }
+
+/* ══ Platform border colours for chat tables ════════════════════════ */
+.whatsapp-row  { border-left: 4px solid #25D366 !important; }
+.telegram-row  { border-left: 4px solid #0088cc !important; }
+.messenger-row { border-left: 4px solid #0084ff !important; }
+
+/* Golden Age glow (Feb – Jul 2024) */
+.golden-glow {
+  border: 1px solid #ffd700 !important;
+  box-shadow: 0 0 15px rgba(255,215,0,.4) !important;
+  background: linear-gradient(to right, rgba(255,215,0,.07), transparent) !important;
+}
+
+/* Black magic period highlight */
+.blackmagic-row {
+  border-left: 4px solid #ff3333 !important;
+  background: rgba(255,0,0,.05) !important;
+}
+
+/* ══ Image full size ════════════════════════════════════════════════ */
+.msg img.attached {
+  width: 100% !important;
+  max-width: 100% !important;
+  border-radius: 12px;
+  margin: 6px 0;
+  display: block;
+}
+
+/* ══ Investigative 5-column table ══════════════════════════════════ */
+.msg table {
+  width: 100%; border-collapse: collapse;
+  font-size: 13px; margin: 12px 0;
+  background: rgba(0,20,28,.5);
+  border-radius: 10px; overflow: hidden;
+}
+.msg table th {
+  padding: 8px 10px;
+  background: rgba(95,232,255,.12);
+  color: #6ff0ff; font-weight: 600;
+  text-align: left; font-size: 12px;
+  letter-spacing: .04em;
+  border-bottom: 1px solid rgba(95,232,255,.15);
+}
+.msg table td {
+  padding: 8px 10px;
+  border-bottom: 1px solid rgba(255,255,255,.04);
+  color: #d0eff8; vertical-align: top;
+  line-height: 1.5;
+}
+.msg table tr:hover td { background: rgba(95,232,255,.04); }

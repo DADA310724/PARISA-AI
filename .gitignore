@@ -9,3 +9,5 @@ pnpm-debug.log*
 Thumbs.db
 dist/
 .cache/
+# বড় asset ফাইল (26MB+) GitHub-এ যাবে না
+attached_assets/
