@@ -28,3 +28,7 @@ outputType = "webview"
 task = "shell.exec"
 args = "node --max-old-space-size=350 server.js"
 waitForPort = 3000
+
+[[ports]]
+localPort = 3000
+externalPort = 80
