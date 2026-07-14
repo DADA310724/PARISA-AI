@@ -501,8 +501,22 @@ PARISA MEMORY PORTAL এ আপনাকে স্বাগতম।
   composerInput.addEventListener("keydown", (e) => {
     if (e.key === "Enter" && e.shiftKey) { e.preventDefault(); const p = composerInput.selectionStart; composerInput.value = composerInput.value.slice(0,p) + "\n" + composerInput.value.slice(p); composerInput.selectionStart = composerInput.selectionEnd = p+1; composerInput.dispatchEvent(new Event("input")); }
   });
+  // ── Button click glow effect ─────────────────────────────────────
+  function addGlow(btn) {
+    if (!btn) return;
+    btn.classList.remove("btn-click-glow");
+    void btn.offsetWidth; // reflow to restart animation
+    btn.classList.add("btn-click-glow");
+    setTimeout(() => btn.classList.remove("btn-click-glow"), 500);
+  }
+  // Attach glow to all buttons
+  ["sendBtn","micBtn","attachBtn","cameraBtn","audioCallBtn","videoCallBtn"].forEach(id => {
+    const el = $("#" + id);
+    if (el) el.addEventListener("pointerdown", () => addGlow(el), { passive: true });
+  });
+
   $("#sendBtn").onclick  = sendMessage;
-  $("#attachBtn").onclick = () => $("#fileInput").click();
+  $("#attachBtn").onclick = () => { addGlow($("#attachBtn")); $("#fileInput").click(); };
   $("#fileInput").addEventListener("change", async (e) => {
     const f = e.target.files?.[0];
     if (!f) return;

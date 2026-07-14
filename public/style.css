@@ -889,6 +889,35 @@ textarea, input, select { font-family: inherit; color: inherit; }
 .telegram-row  { border-left: 4px solid #0088cc !important; }
 .messenger-row { border-left: 4px solid #0084ff !important; }
 
+/* ══ Tool buttons — Memory Portal teal-green style ════════════════ */
+.composer-tools .ic-btn {
+  border-color: rgba(0, 229, 180, .35) !important;
+  background: linear-gradient(180deg, rgba(0, 229, 180, .10), rgba(0, 200, 160, .04)) !important;
+  color: rgba(0, 229, 180, .90) !important;
+}
+.composer-tools .ic-btn svg { stroke: rgba(0, 229, 180, .90); }
+.composer-tools .ic-btn:hover, .composer-tools .ic-btn:active {
+  background: linear-gradient(180deg, rgba(0, 229, 180, .20), rgba(0, 200, 160, .10)) !important;
+  border-color: rgba(0, 229, 180, .60) !important;
+  box-shadow: 0 0 14px rgba(0, 229, 180, .30) !important;
+}
+
+/* ══ Button click glow animation ═══════════════════════════════════ */
+@keyframes btnGlow {
+  0%   { box-shadow: 0 0 0 0 var(--glow-color, rgba(95,232,255,.6)); }
+  40%  { box-shadow: 0 0 0 10px rgba(0,0,0,0); }
+  100% { box-shadow: 0 0 0 0 rgba(0,0,0,0); }
+}
+.btn-click-glow {
+  animation: btnGlow 0.45s ease-out forwards !important;
+}
+/* Send button glow — teal */
+.ic-btn.send.btn-click-glow { --glow-color: rgba(95,232,255,.70); }
+/* Mic button glow — pink */
+.ic-btn.mic.btn-click-glow  { --glow-color: rgba(255,120,140,.65); }
+/* Tool buttons glow — green */
+.composer-tools .ic-btn.btn-click-glow { --glow-color: rgba(0,229,180,.65); }
+
 /* Golden Age glow (Feb – Jul 2024) */
 .golden-glow {
   border: 1px solid #ffd700 !important;
@@ -911,25 +940,89 @@ textarea, input, select { font-family: inherit; color: inherit; }
   display: block;
 }
 
-/* ══ Investigative 5-column table ══════════════════════════════════ */
+/* ══ Investigative 5-column table — NotebookLM style ═══════════════ */
 .msg table {
   width: 100%; border-collapse: collapse;
-  font-size: 13px; margin: 12px 0;
-  background: rgba(0,20,28,.5);
+  font-size: 12.5px; margin: 10px 0;
+  background: rgba(0,15,22,.6);
+  border: 1px solid rgba(95,232,255,.12);
   border-radius: 10px; overflow: hidden;
 }
+.msg table thead tr {
+  background: rgba(0,100,80,.28);
+}
 .msg table th {
-  padding: 8px 10px;
-  background: rgba(95,232,255,.12);
-  color: #6ff0ff; font-weight: 600;
-  text-align: left; font-size: 12px;
-  letter-spacing: .04em;
-  border-bottom: 1px solid rgba(95,232,255,.15);
+  padding: 8px 9px;
+  color: #6ff0ff; font-weight: 700;
+  text-align: left; font-size: 11.5px;
+  letter-spacing: .05em; text-transform: uppercase;
+  border-bottom: 1px solid rgba(95,232,255,.18);
+  white-space: nowrap;
 }
 .msg table td {
-  padding: 8px 10px;
+  padding: 7px 9px;
   border-bottom: 1px solid rgba(255,255,255,.04);
   color: #d0eff8; vertical-align: top;
   line-height: 1.5;
 }
+/* তারিখ কলাম */
+.msg table td:nth-child(1) {
+  white-space: nowrap; font-size: 11.5px;
+  color: rgba(180,240,250,.70); min-width: 100px;
+}
+/* প্ল্যাটফর্ম কলাম */
+.msg table td:nth-child(2) {
+  font-weight: 600; font-size: 11.5px;
+  min-width: 70px; white-space: nowrap;
+}
+/* প্রেরক কলাম */
+.msg table td:nth-child(3) {
+  color: #00e5b4; font-weight: 600; min-width: 80px;
+}
+/* মেসেজ কলাম */
+.msg table td:nth-child(4) {
+  color: #e8f8ff; font-style: italic;
+  min-width: 140px;
+}
+/* ফাইল নাম কলাম */
+.msg table td:nth-child(5) {
+  font-size: 11px; color: rgba(180,240,250,.55);
+  white-space: nowrap;
+}
+/* বিশ্লেষণ কলাম */
+.msg table td:nth-child(6) {
+  color: #c8e8f4; font-size: 12px; min-width: 160px;
+}
+/* রেফারেন্স নম্বর [X] — teal রঙ */
+.msg table td:nth-child(6) { color: #c8e8f4; }
 .msg table tr:hover td { background: rgba(95,232,255,.04); }
+.msg table tr:last-child td { border-bottom: none; }
+
+/* ══ Reference numbers [X] inside text ════════════════════════════ */
+.msg .ref-num {
+  display: inline-block;
+  background: rgba(0,229,180,.12);
+  border: 1px solid rgba(0,229,180,.30);
+  color: #00e5b4;
+  border-radius: 4px;
+  padding: 0 4px;
+  font-size: 11px;
+  font-weight: 700;
+  margin-left: 2px;
+  vertical-align: super;
+}
+
+/* ══ Section headers inside AI messages ════════════════════════════ */
+.msg h2, .msg h3 {
+  margin: 14px 0 6px;
+  color: #6ff0ff;
+  font-size: 14px;
+  font-weight: 700;
+  border-bottom: 1px solid rgba(95,232,255,.12);
+  padding-bottom: 4px;
+}
+.msg h3 {
+  font-size: 13px;
+  color: #00e5b4;
+  border-bottom-color: rgba(0,229,180,.10);
+}
