@@ -540,30 +540,104 @@ textarea, input, select { font-family: inherit; color: inherit; }
 }
 .call-btn.end { background: #d23b3b; border-color: #ff6b6b; color: white; }
 
-/* Audio call orb */
-.call .call-bg {
-  position: absolute; inset: 0;
-  background:
-    radial-gradient(60% 50% at 50% 50%, rgba(95, 232, 255, .22), transparent 60%),
-    radial-gradient(80% 50% at 50% 100%, rgba(0, 180, 200, .18), transparent 60%);
+/* ══ Audio Call — Reference App Style ══════════════════════════════ */
+.ac-view {
+  background: linear-gradient(160deg, #020e0e 0%, #041818 60%, #021010 100%) !important;
+  display: flex !important;
+  flex-direction: column !important;
+  align-items: center !important;
+  justify-content: space-between !important;
+  padding: max(56px, env(safe-area-inset-top)) 24px max(40px, env(safe-area-inset-bottom)) !important;
 }
-.call-orb { position: relative; width: 220px; height: 220px; display: grid; place-items: center; }
-.orb-core {
-  width: 120px; height: 120px; border-radius: 50%;
-  background: radial-gradient(circle at 30% 30%, #d6f7ff, #5fe8ff 40%, #006a78 85%);
-  box-shadow: 0 0 50px rgba(95, 232, 255, .55), inset 0 0 30px rgba(255, 255, 255, .3);
-  animation: pulse 2.4s ease-in-out infinite;
+.ac-section { width: 100%; display: flex; flex-direction: column; align-items: center; }
+.ac-top { gap: 6px; }
+.ac-center { gap: 16px; flex: 1; justify-content: center; }
+.ac-bottom { gap: 16px; }
+
+/* Brand name — color changes with state */
+.ac-name {
+  font-family: 'Inter', system-ui, sans-serif;
+  font-weight: 900; letter-spacing: 6px; font-size: 20px;
+  color: #22d3ee; transition: color 0.4s ease;
 }
-.orb-ring {
-  position: absolute; inset: 0; border-radius: 50%;
-  border: 1px solid rgba(150, 230, 240, .35);
-  animation: ring 3s ease-out infinite;
+.ac-name.speak { color: #4ade80; }
+.ac-name.think { color: #fbbf24; }
+.ac-status-text {
+  color: rgba(255,255,255,.70); font-size: 14px;
+  font-family: 'Noto Sans Bengali', 'Hind Siliguri', sans-serif;
+  margin-top: 4px;
 }
-.orb-ring.r2 { animation-delay: 1s; }
-.orb-ring.r3 { animation-delay: 2s; }
-@keyframes ring { 0% { transform: scale(.5); opacity: .6; } 100% { transform: scale(1.6); opacity: 0; } }
-@keyframes pulse { 0%, 100% { transform: scale(1); } 50% { transform: scale(1.07); } }
-.call-status { position: absolute; top: 22%; width: 100%; text-align: center; opacity: .85; font-size: 14px; }
+
+/* Orb wrap — holds mic-rings + photo */
+.ac-orb-wrap {
+  position: relative; width: 200px; height: 200px;
+  display: flex; align-items: center; justify-content: center;
+}
+
+/* Mic rings — state classes applied by JS */
+.mic-ring {
+  position: absolute; width: 112px; height: 112px;
+  border-radius: 50%; pointer-events: none;
+}
+/* listen = cyan */
+.mic-ring.listen { border: 2px solid rgba(34,211,238,.55); animation: micListen 1.4s ease-out infinite; }
+#micRing2.listen { animation-delay: .46s; }
+#micRing3.listen { animation-delay: .92s; }
+@keyframes micListen { 0% { transform: scale(1); opacity: .8; } 100% { transform: scale(2.2); opacity: 0; } }
+
+/* speak = green */
+.mic-ring.speak { border: 2px solid rgba(74,222,128,.55); animation: micSpeak .9s ease-out infinite; }
+#micRing2.speak { animation-delay: .3s; }
+#micRing3.speak { animation-delay: .6s; }
+@keyframes micSpeak { 0% { transform: scale(1); opacity: .9; } 100% { transform: scale(1.9); opacity: 0; } }
+
+/* think = yellow */
+.mic-ring.think { border: 2px solid rgba(251,191,36,.4); animation: micThink 2s ease-in-out infinite; }
+#micRing2.think { animation-delay: .66s; }
+#micRing3.think { animation-delay: 1.32s; }
+@keyframes micThink { 0%, 100% { transform: scale(1); opacity: .5; } 50% { transform: scale(1.5); opacity: .15; } }
+
+/* Parisa photo circle */
+.ac-photo-circle {
+  position: relative; z-index: 10;
+  width: 112px; height: 112px; border-radius: 50%; overflow: hidden;
+  border: 3px solid rgba(34,211,238,.70);
+  box-shadow: 0 0 32px rgba(34,211,238,.40);
+  transition: border-color .4s ease, box-shadow .4s ease;
+}
+.ac-photo-circle.speak { border-color: rgba(74,222,128,.70); box-shadow: 0 0 32px rgba(74,222,128,.40); }
+.ac-photo-circle.think { border-color: rgba(251,191,36,.70); box-shadow: 0 0 32px rgba(251,191,36,.30); }
+.ac-photo { width: 100%; height: 100%; object-fit: cover; border-radius: 50%; filter: saturate(110%) brightness(1.05); }
+
+/* AI caption box inside audio call */
+.ac-caption-box {
+  width: 100%; min-height: 0;
+  background: rgba(0,0,0,.40);
+  border: 1px solid rgba(255,255,255,.10);
+  backdrop-filter: blur(8px); -webkit-backdrop-filter: blur(8px);
+  border-radius: 16px; padding: 12px 16px;
+  text-align: center;
+  color: rgba(255,255,255,.90);
+  font-size: 14px; line-height: 1.6;
+  font-family: 'Noto Sans Bengali', 'Hind Siliguri', sans-serif;
+  transition: opacity .25s ease;
+}
+.ac-caption-box:empty { display: none; }
+
+/* End call button */
+.ac-end-btn {
+  padding: 14px 48px; border-radius: 999px;
+  background: linear-gradient(135deg, #dc2626, #b91c1c);
+  box-shadow: 0 0 24px rgba(220,38,38,.50);
+  color: #fff; font-weight: 700; font-size: 15px;
+  font-family: 'Noto Sans Bengali', 'Hind Siliguri', sans-serif;
+  cursor: pointer; border: none; margin-top: 4px;
+  transition: transform .15s ease;
+}
+.ac-end-btn:active { transform: scale(.95); }
+
+/* Legacy orb (kept for orb CSS state) */
+.call-orb { display: none; }
 .call-status.sm { position: static; }
 .call-controls { position: absolute; bottom: 28px; left: 0; right: 0; }
 

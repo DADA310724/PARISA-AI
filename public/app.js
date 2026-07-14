@@ -751,13 +751,29 @@ PARISA MEMORY PORTAL এ আপনাকে স্বাগতম।
   $("#endAudioCall").onclick  = () => endAudioCall();
   $("#muteAudioCall").onclick = () => { if (callRecognizer) callRecognizer.stop(); };
 
+  // ── Call state → mic-ring + photo + name colour ──────────────────
+  function setCallState(state) {
+    // state: "listening" | "talking" | "thinking"
+    const ringCls = state === "talking" ? "speak" : state === "thinking" ? "think" : "listen";
+    ["micRing1","micRing2","micRing3"].forEach(id => {
+      const el = document.getElementById(id);
+      if (!el) return;
+      el.classList.remove("listen","speak","think");
+      el.classList.add(ringCls);
+    });
+    const photo = document.getElementById("acPhotoCircle");
+    if (photo) { photo.classList.remove("speak","think"); if (ringCls !== "listen") photo.classList.add(ringCls); }
+    const name = document.getElementById("acBrandName");
+    if (name) { name.classList.remove("speak","think"); if (ringCls !== "listen") name.classList.add(ringCls); }
+  }
+
   function setWave(state, id = "audioWave") {
     // Wave element (video call uses vcAiWave)
     const el = document.getElementById(id);
     if (el) { el.classList.remove("idle","listening","talking"); el.classList.add(state); }
-    // Glowing orb (audio call)
-    const orb = document.getElementById("callOrb");
-    if (orb) { orb.classList.remove("idle","listening","talking"); orb.classList.add(state); }
+    // Mic rings (audio call) — map wave states to ring states
+    const ringState = state === "talking" ? "talking" : state === "idle" ? "thinking" : "listening";
+    setCallState(ringState);
   }
 
   // ── User speech caption (what user says during call) ─────────────
@@ -815,25 +831,29 @@ PARISA MEMORY PORTAL এ আপনাকে স্বাগতম।
       buffer = "";
       if (!said || !callOn || _callSeq !== mySeq) return;
       aiReplying = true;
-      updateUserCaption("", "userCaption");   // user caption fade out
-      setWave("talking");
-      $("#audioCallStatus").textContent = "ভাবছি…";
+      updateUserCaption("", "userCaption");
+      // ভাবছি state — yellow ring
+      setCallState("thinking");
+      if ($("#audioCallStatus")) $("#audioCallStatus").textContent = "ভাবছি…";
       const reply = await callChat(said);
       if (!callOn || _callSeq !== mySeq) { aiReplying = false; return; }
-      updateCaption($("#audioCallCaption"), reply);   // AI caption (word-by-word)
-      setWave("talking");
+      // বলছি state — green ring
+      setCallState("talking");
+      if ($("#audioCallStatus")) $("#audioCallStatus").textContent = "বলছি…";
+      updateCaption($("#audioCallCaption"), reply);
       await speakAndWait(reply, $("#audioCallStatus"));
       aiReplying = false;
       if (!callOn || _callSeq !== mySeq) return;
-      setWave("listening");
-      $("#audioCallStatus").textContent = "শুনছি…";
+      // শুনছি state — cyan ring
+      setCallState("listening");
+      if ($("#audioCallStatus")) $("#audioCallStatus").textContent = "শুনছি…";
       setTimeout(() => { if (callOn && _callSeq === mySeq) updateCaption($("#audioCallCaption"), ""); }, 2500);
     };
 
     callRecognizer.onstart = () => {
       if (currentAudio || currentUtter) { _stopAll(); aiReplying = false; }
-      setWave("listening");
-      $("#audioCallStatus").textContent = "শুনছি…";
+      setCallState("listening");
+      if ($("#audioCallStatus")) $("#audioCallStatus").textContent = "শুনছি…";
     };
     callRecognizer.onresult = (e) => {
       let interim = "";
