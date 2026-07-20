@@ -123,6 +123,33 @@ PARISA MEMORY PORTAL এ আপনাকে স্বাগতম।
     return acts;
   }
 
+  // ── Investigative table enhancer: platform colors, Golden Age glow, ref-num badges ──
+  function enhanceInvestigativeTable(html) {
+    if (!html || !html.includes("<table")) return html;
+    const wrap = document.createElement("div");
+    wrap.innerHTML = html;
+    wrap.querySelectorAll("table tbody tr").forEach(tr => {
+      const cells = tr.querySelectorAll("td");
+      if (cells.length < 2) return;
+      const dateText = (cells[0].textContent || "").trim();
+      const platformText = (cells[1].textContent || "").trim().toLowerCase();
+      if (platformText.includes("whatsapp")) tr.classList.add("whatsapp-row");
+      else if (platformText.includes("telegram")) tr.classList.add("telegram-row");
+      else if (platformText.includes("messenger") || platformText.includes("facebook")) tr.classList.add("messenger-row");
+      const dm = dateText.match(/(\d{4})[.\-\/](\d{1,2})[.\-\/](\d{1,2})/);
+      if (dm) {
+        const y = +dm[1], mo = +dm[2];
+        if (y === 2024 && mo >= 2 && mo <= 7) tr.classList.add("golden-glow");
+      }
+      const rowText = tr.textContent || "";
+      if (/জাদু|ব্ল্যাক\s*ম্যাজিক|black\s*magic|তান্ত্রিক|কবিরাজ|হুজুর/i.test(rowText)) tr.classList.add("blackmagic-row");
+    });
+    wrap.querySelectorAll("td, p, li").forEach(el => {
+      el.innerHTML = el.innerHTML.replace(/\[([0-9০-৯]{1,2})\]/g, '<span class="ref-num">$1</span>');
+    });
+    return wrap.innerHTML;
+  }
+
   function renderMarkdown(text) {
     const imgBase = api("/image/");
 
@@ -183,6 +210,9 @@ PARISA MEMORY PORTAL এ আপনাকে স্বাগতম।
     html = html.replace(/<table([\s\S]*?)<\/table>/gi, (match) =>
       `<div class="tbl-wrap">${match}</div>`
     );
+
+    // Platform colors, golden age glow, ref-num badges
+    html = enhanceInvestigativeTable(html);
 
     html = replaceSsPlaceholders(html, imgBase);
     return html;
