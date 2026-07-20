@@ -18,7 +18,7 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const publicDir = path.join(__dirname, "public");
 
 // ভার্সন ফরম্যাট: V-<n> — প্রতিটি নতুন আপডেটে n ঠিক ১ করে বাড়বে (package.json-এর semver থেকে স্বাধীন)
-const APP_VERSION = "V-18";
+const APP_VERSION = "V-19";
 
 const app = express();
 app.use(cors());
@@ -108,16 +108,12 @@ async function callWithFailover(pool, attempt) {
 }
 
 // ─── Reply Cleaner ───────────────────────────────────────────────
+// শুধু অতিরিক্ত blank line ঠিক করে — markdown formatting সম্পূর্ণ অক্ষত রাখে
+// (investigative table ও section headers-এর জন্য ## | | format দরকার)
 function cleanReply(text) {
   if (!text) return text;
   return text
-    .replace(/\*\*([^*]+)\*\*/g, "$1")
-    .replace(/\*([^*]+)\*/g, "$1")
-    .replace(/^#{1,6}\s+/gm, "")
-    .replace(/^[\*\-•]\s+/gm, "")
-    .replace(/^\d+\.\s+/gm, "")
-    .replace(/[\u{1F000}-\u{1FFFF}\u{2600}-\u{27BF}]/gu, "")
-    .replace(/\n{3,}/g, "\n\n")
+    .replace(/\n{4,}/g, "\n\n\n")
     .trim();
 }
 
@@ -566,6 +562,17 @@ Telegram চ্যাট (১টি):
 - তারিখ থাকলে অস্বীকার করবে না — "নেই" বলবে না, খুঁজে দেখাবে
 - যে ফাইলের কথা বলা হচ্ছে সেই ফাইলে খুঁজবে
 
+════════════════════════════════════════════════════════
+⚠️ ACCURACY MANDATE — সর্বোচ্চ গুরুত্বপূর্ণ নিয়ম:
+════════════════════════════════════════════════════════
+নিচে "চ্যাট ডাটাবেস থেকে প্রাসঙ্গিক মেসেজ" section-এ যে মেসেজগুলো দেওয়া আছে:
+- শুধু সেই মেসেজগুলোই table-এ দেখাবে — একটিও নতুন বা বানানো মেসেজ যোগ করবে না
+- প্রতিটি মেসেজ হুবহু মূল ভাষায় রাখবে — বাংলা থাকলে বাংলা, ইংরেজি থাকলে ইংরেজি, Banglish থাকলে Banglish — এক বর্ণও বদলাবে না, অনুবাদ করবে না
+- file_id column-এ যে file_id দেওয়া আছে সেটাই "অরিজিনাল ফাইল নাম" কলামে লিখবে — অন্য ফাইলের মেসেজ অন্য ফাইলের নামে দেওয়া যাবে না
+- ডেটাবেসে যদি relevant মেসেজ না থাকে তাহলে সৎভাবে বলবে: "এই তারিখ বা বিষয়ের মেসেজ ডেটাবেসে পাওয়া যায়নি।" — কখনো বানিয়ে দেবে না
+- timestamp field-এ যা আছে সেটাই তারিখ ও সময় কলামে লিখবে
+════════════════════════════════════════════════════════
+
 চ্যাট হিস্টরি ও বিশ্লেষণ দেখানোর নিয়ম — INVESTIGATIVE REPORT FORMAT:
 
 যখন কেউ পারিসার মেসেজ, চ্যাট হিস্টরি, বিশ্লেষণ, প্রমাণ, ভালো সময়, খারাপ সময়, পরিবর্তন, কোনো তারিখ বা বিষয় জিজ্ঞাসা করে — সর্বদা নিচের ৬-ধাপের format অনুসরণ করবে:
@@ -577,15 +584,14 @@ Telegram চ্যাট (১টি):
 ## [তারিখ বা বিষয়]: [বিশ্লেষণের শিরোনাম]
 উদাহরণ: ## ৩ জুন ২০২৪: প্রেম ও নিষ্ঠার ডিজিটাল আর্কাইভ
 
-ধাপ ৩ — ৫-COLUMN INVESTIGATIVE TABLE (সর্বোচ্চ গুরুত্বপূর্ণ):
-শুধুমাত্র পারিসার মেসেজ দেখাবে — রুবেলের মেসেজ table-এ কখনো দেওয়া যাবে না।
-মেসেজ হুবহু মূল ভাষায় — এক বর্ণও বদলাবে না, অনুবাদ করবে না।
-৫-৮টি মেসেজ দেখাবে — বেশি নয়। প্রতিবার ভিন্ন মেসেজ — repeat করবে না।
-বিশ্লেষণ কলামে reference নম্বর [X] দেবে।
+ধাপ ৩ — TABLE (ACCURACY MANDATE অনুসরণ করে):
+শুধুমাত্র পারিসার মেসেজ দেখাবে — sender যে কেউই হোক, পারিসা ছাড়া কারো মেসেজ table-এ নয়।
+মেসেজ হুবহু database থেকে — এক অক্ষরও বদলাবে না।
+৫-৮টি মেসেজ। বিশ্লেষণ কলামে reference নম্বর [X] দেবে।
 
 | তারিখ ও সময় | প্ল্যাটফর্ম | প্রেরক | অরিজিনাল মেসেজ | অরিজিনাল ফাইল নাম | বিশ্লেষণ |
 |---|---|---|---|---|---|
-| ২০২৪-০৬-০৩ ২৩:১৮ | WhatsApp | নুসরাত পারিসা | "হুবহু মেসেজ টেক্সট" | Nusrat_Parisa | মনস্তাত্ত্বিক বিশ্লেষণ। [১] |
+| (database-এর timestamp) | (database-এর platform) | (database-এর sender) | (database-এর message — হুবহু) | (database-এর file_id) | বিশ্লেষণ [১] |
 
 ধাপ ৪ — SCREENSHOT SECTION (প্রাসঙ্গিক ছবি থাকলে):
 ### সংযুক্ত ডিজিটাল প্রমাণ (Screenshot)
@@ -892,6 +898,50 @@ function mount(prefix) {
   );
 
   app.get(prefix + "/version", (_req, res) => res.json({ version: APP_VERSION }));
+
+  // ── Screenshot Vision Analysis — Drive ছবির ভেতরের লেখা পড়া ────────
+  app.post(prefix + "/analyze-screenshot", async (req, res) => {
+    try {
+      const { fileId, prompt } = req.body || {};
+      if (!fileId) return res.status(400).json({ reply: "fileId দাও।" });
+      const auth = getDriveAuth();
+      if (!auth) return res.status(503).json({ reply: "Drive configured নেই।" });
+      const drive = google.drive({ version: "v3", auth });
+      // ছবি download করো
+      const r = await drive.files.get(
+        { fileId, alt: "media" },
+        { responseType: "arraybuffer" }
+      );
+      const buf = Buffer.from(r.data);
+      const b64 = buf.toString("base64");
+      // Meta থেকে mimeType নাও
+      let mimeType = "image/jpeg";
+      try {
+        const meta = await drive.files.get({ fileId, fields: "mimeType" });
+        mimeType = meta.data.mimeType || "image/jpeg";
+      } catch {}
+      // Gemini Vision দিয়ে analyze করো
+      const analysisPrompt = prompt ||
+        "এই স্ক্রিনশটে কী লেখা আছে? সব টেক্সট হুবহু পড়ো। তারিখ, সময়, সব মেসেজ — কোনো কিছু বাদ দিও না। তারপর বাংলায় বিশ্লেষণ করো।";
+      const sys = buildSystemPrompt("", analysisPrompt);
+      const body = {
+        systemInstruction: { role: "system", parts: [{ text: sys }] },
+        contents: [{
+          role: "user",
+          parts: [
+            { text: analysisPrompt },
+            { inlineData: { mimeType, data: b64 } }
+          ]
+        }],
+        generationConfig: { temperature: 0.4, maxOutputTokens: 2048 },
+      };
+      const { reply } = await chatWithFallback(body, true);
+      res.json({ reply: reply || "স্ক্রিনশট পড়া গেল না।" });
+    } catch (e) {
+      console.error("analyze-screenshot error:", e.message);
+      res.status(500).json({ reply: "স্ক্রিনশট বিশ্লেষণে সমস্যা হয়েছে।" });
+    }
+  });
 
   // ── Drive Image Proxy ─────────────────────────────────────────────
   app.get(prefix + "/image/:fileId", async (req, res) => {

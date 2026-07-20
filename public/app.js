@@ -125,26 +125,23 @@ PARISA MEMORY PORTAL এ আপনাকে স্বাগতম।
 
   function renderMarkdown(text) {
     const imgBase = api("/image/");
-    text = text.replace(/\[IMAGE:([A-Za-z0-9_\-]+)\]/g,
-      `<img src="${imgBase}$1" class="drive-img" alt="স্ক্রিনশট" loading="lazy" onerror="this.style.display='none'">`);
+
+    // [IMAGE:FILE_ID] → screenshot wrapper + analyze button
+    text = text.replace(/\[IMAGE:([A-Za-z0-9_\-]+)\]/g, (_, fid) =>
+      `SSPLACEHOLDER_${fid}_SSPLACEHOLDER`
+    );
 
     // ── WhatsApp-style chat log rendering ──────────────────────────
-    // Detect blocks between ━━━ separators containing [HH:MM] sender: msg lines
     if (/━+/.test(text) && /\[\d{1,2}:\d{2}\]/.test(text)) {
       const lines = text.split("\n");
       let html = "";
       let inChat = false;
       for (const line of lines) {
         const trimmed = line.trim();
-        // Header line (📱 or platform name before first separator)
         if (/━{3,}/.test(trimmed)) {
-          if (!inChat) {
-            html += `<div class="chat-log">`;
-            inChat = true;
-          }
+          if (!inChat) { html += `<div class="chat-log">`; inChat = true; }
           continue;
         }
-        // Chat message line: [HH:MM] Name: text
         const m = trimmed.match(/^\[(\d{1,2}:\d{2})\]\s*([^:]+?)\s*:\s*([\s\S]*)$/);
         if (m && inChat) {
           const [, time, sender, msg] = m;
@@ -155,32 +152,51 @@ PARISA MEMORY PORTAL এ আপনাকে স্বাগতম।
           const escapedMsg = msg.replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;");
           html += `<div class="cl-row ${side}"><div class="cl-bubble"><div class="cl-name">${sName}</div><div>${escapedMsg}</div><div class="cl-time">${time}</div></div></div>`;
         } else if (inChat && trimmed && !/^\s*$/.test(trimmed) && !m) {
-          // Non-message text inside chat block (header/footer lines)
           html += `<div class="cl-header">${trimmed.replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;")}</div>`;
         }
       }
       if (inChat) html += `</div>`;
       if (html) {
-        // Render any non-chat portions with markdown
         const beforeChat = text.split(/━{3,}/)[0].trim();
         let prefix = "";
         if (beforeChat) {
           try { prefix = DOMPurify.sanitize(marked.parse(beforeChat, { breaks: true, gfm: true })); }
           catch { prefix = beforeChat.replace(/\n/g, "<br/>"); }
         }
-        return DOMPurify.sanitize(prefix + html, {
-          ADD_TAGS: ["img", "div"], ADD_ATTR: ["src", "class", "alt", "loading", "onerror"]
+        let out = DOMPurify.sanitize(prefix + html, {
+          ADD_TAGS: ["img", "div"], ADD_ATTR: ["src", "class", "alt", "loading", "onerror", "data-ssid"]
         });
+        out = replaceSsPlaceholders(out, imgBase);
+        return out;
       }
     }
 
+    let html;
     try {
-      return DOMPurify.sanitize(
+      html = DOMPurify.sanitize(
         marked.parse(text, { breaks: true, gfm: true }),
-        { ADD_TAGS: ["img"], ADD_ATTR: ["src", "class", "alt", "loading", "onerror"] }
+        { ADD_TAGS: ["img", "div"], ADD_ATTR: ["src", "class", "alt", "loading", "onerror", "data-ssid"] }
       );
-    }
-    catch { return text.replace(/\n/g, "<br/>"); }
+    } catch { html = text.replace(/\n/g, "<br/>"); }
+
+    // Wrap <table> elements in scroll container
+    html = html.replace(/<table([\s\S]*?)<\/table>/gi, (match) =>
+      `<div class="tbl-wrap">${match}</div>`
+    );
+
+    html = replaceSsPlaceholders(html, imgBase);
+    return html;
+  }
+
+  // Screenshot placeholder → wrap with container + analyze button
+  function replaceSsPlaceholders(html, imgBase) {
+    return html.replace(/SSPLACEHOLDER_([A-Za-z0-9_\-]+)_SSPLACEHOLDER/g, (_, fid) =>
+      `<div class="ss-wrap" data-ssid="${fid}">` +
+        `<img src="${imgBase}${fid}" class="drive-img" alt="স্ক্রিনশট" loading="lazy" onerror="this.style.display='none'">` +
+        `<button class="analyze-ss-btn" data-ssid="${fid}">📖 স্ক্রিনশট বিশ্লেষণ করুন</button>` +
+        `<div class="ss-result" id="ssr-${fid}"></div>` +
+      `</div>`
+    );
   }
   function scrollToBottom() { messagesEl.scrollTop = messagesEl.scrollHeight; }
   function escapeHtml(s) {
@@ -1057,6 +1073,39 @@ PARISA MEMORY PORTAL এ আপনাকে স্বাগতম।
     messagesEl.appendChild(wrap);
     scrollToBottom();
   }
+
+  // ── Screenshot analyze button — event delegation ──────────────────
+  messagesEl.addEventListener("click", async (e) => {
+    const btn = e.target.closest(".analyze-ss-btn");
+    if (!btn) return;
+    const fid = btn.dataset.ssid;
+    if (!fid) return;
+    const resultEl = document.getElementById("ssr-" + fid);
+    if (!resultEl) return;
+
+    btn.classList.add("loading");
+    btn.textContent = "পড়ছি…";
+
+    try {
+      const r = await fetch(api("/analyze-screenshot"), {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ fileId: fid }),
+      });
+      const data = await r.json();
+      const reply = data.reply || "পড়া গেল না।";
+      resultEl.innerHTML = renderMarkdown(reply);
+      resultEl.classList.add("show");
+      // Also speak the result
+      speak(reply);
+    } catch {
+      resultEl.textContent = "নেটওয়ার্ক সমস্যা — আবার চেষ্টা করুন।";
+      resultEl.classList.add("show");
+    }
+    btn.classList.remove("loading");
+    btn.textContent = "📖 স্ক্রিনশট বিশ্লেষণ করুন";
+    scrollToBottom();
+  });
 
   // ── PWA service worker ────────────────────────────────────────────
   if ("serviceWorker" in navigator) {
