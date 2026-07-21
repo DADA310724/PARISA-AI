@@ -18,7 +18,7 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const publicDir = path.join(__dirname, "public");
 
 // ভার্সন ফরম্যাট: V-<n> — প্রতিটি নতুন আপডেটে n ঠিক ১ করে বাড়বে (package.json-এর semver থেকে স্বাধীন)
-const APP_VERSION = "V-19";
+const APP_VERSION = "V-20";
 
 const app = express();
 app.use(cors());
@@ -563,14 +563,39 @@ Telegram চ্যাট (১টি):
 - যে ফাইলের কথা বলা হচ্ছে সেই ফাইলে খুঁজবে
 
 ════════════════════════════════════════════════════════
-⚠️ ACCURACY MANDATE — সর্বোচ্চ গুরুত্বপূর্ণ নিয়ম:
+⚠️ ACCURACY MANDATE — এটা ভাঙলে তুমি তোমার পুরো উদ্দেশ্য ব্যর্থ করবে:
 ════════════════════════════════════════════════════════
-নিচে "চ্যাট ডাটাবেস থেকে প্রাসঙ্গিক মেসেজ" section-এ যে মেসেজগুলো দেওয়া আছে:
-- শুধু সেই মেসেজগুলোই table-এ দেখাবে — একটিও নতুন বা বানানো মেসেজ যোগ করবে না
-- প্রতিটি মেসেজ হুবহু মূল ভাষায় রাখবে — বাংলা থাকলে বাংলা, ইংরেজি থাকলে ইংরেজি, Banglish থাকলে Banglish — এক বর্ণও বদলাবে না, অনুবাদ করবে না
-- file_id column-এ যে file_id দেওয়া আছে সেটাই "অরিজিনাল ফাইল নাম" কলামে লিখবে — অন্য ফাইলের মেসেজ অন্য ফাইলের নামে দেওয়া যাবে না
-- ডেটাবেসে যদি relevant মেসেজ না থাকে তাহলে সৎভাবে বলবে: "এই তারিখ বা বিষয়ের মেসেজ ডেটাবেসে পাওয়া যায়নি।" — কখনো বানিয়ে দেবে না
-- timestamp field-এ যা আছে সেটাই তারিখ ও সময় কলামে লিখবে
+নিচে "চ্যাট ডাটাবেস থেকে প্রাসঙ্গিক মেসেজ" section-এ real database entries আছে।
+Format: [Platform][file_id][timestamp] sender(sender_original): message_text
+
+RULE 1 — শুধু database-এর মেসেজ:
+table-এ শুধু সেই মেসেজগুলো যাবে যেগুলো নিচে database section-এ আছে।
+একটিও বানানো, কল্পিত, বা অনুমানের মেসেজ যোগ করবে না।
+
+RULE 2 — VERBATIM (হুবহু) — এটা সবচেয়ে গুরুত্বপূর্ণ:
+database-এ যা লেখা আছে, table-এ হুবহু সেটাই লিখবে।
+অনুবাদ সম্পূর্ণ নিষিদ্ধ — এমনকি একটি শব্দও।
+
+VERBATIM উদাহরণ (এগুলো ঠিক এভাবে রাখতে হবে):
+• database: "Assalamu Walaikum"       → table: "Assalamu Walaikum"       [আস্সালামুয়ালাইকুম লেখা যাবে না]
+• database: "Block kore dichen"       → table: "Block kore dichen"       [ব্লক করে দিয়েছেন লেখা যাবে না]
+• database: "I miss you so much"      → table: "I miss you so much"      [বাংলায় লেখা যাবে না]
+• database: "Keno amake miss koro"    → table: "Keno amake miss koro"    [কেন আমাকে মিস করো লেখা যাবে না]
+• database: "তুমি আমার সব কিছু"      → table: "তুমি আমার সব কিছু"      [একই থাকবে]
+• database: "ok"                      → table: "ok"                      ["ঠিক আছে" লেখা যাবে না]
+• database: "amr jonno doa koro"      → table: "amr jonno doa koro"      [Banglish হুবহু রাখো]
+
+RULE 3 — সঠিক file_id:
+প্রতিটি মেসেজের file_id যা database-এ আছে, "অরিজিনাল ফাইল নাম" কলামে ঠিক সেটাই লিখবে।
+যে মেসেজ Nusrat_Parisa file-এর, সেটা My_Wife file-এর নামে দেওয়া যাবে না।
+
+RULE 4 — timestamp হুবহু:
+database-এর timestamp field-এ যা আছে সেটাই "তারিখ ও সময়" কলামে লিখবে।
+নিজে থেকে তারিখ বানাবে না।
+
+RULE 5 — না পেলে সৎভাবে বলবে:
+database-এ relevant মেসেজ না থাকলে বলবে: "এই তারিখ বা বিষয়ের মেসেজ ডেটাবেসে পাওয়া যায়নি।"
+কখনো ফাঁকা table বা বানানো data দেবে না।
 ════════════════════════════════════════════════════════
 
 চ্যাট হিস্টরি ও বিশ্লেষণ দেখানোর নিয়ম — INVESTIGATIVE REPORT FORMAT:
@@ -907,23 +932,47 @@ function mount(prefix) {
       const auth = getDriveAuth();
       if (!auth) return res.status(503).json({ reply: "Drive configured নেই।" });
       const drive = google.drive({ version: "v3", auth });
+
+      // আগে metadata নাও — filename-এ তারিখ থাকে
+      let mimeType = "image/jpeg";
+      let fileName = "";
+      let fileCreated = "";
+      try {
+        const meta = await drive.files.get({
+          fileId,
+          fields: "name,mimeType,createdTime,modifiedTime"
+        });
+        mimeType    = meta.data.mimeType     || "image/jpeg";
+        fileName    = meta.data.name         || "";
+        fileCreated = meta.data.createdTime  || meta.data.modifiedTime || "";
+      } catch {}
+
       // ছবি download করো
       const r = await drive.files.get(
         { fileId, alt: "media" },
         { responseType: "arraybuffer" }
       );
-      const buf = Buffer.from(r.data);
-      const b64 = buf.toString("base64");
-      // Meta থেকে mimeType নাও
-      let mimeType = "image/jpeg";
-      try {
-        const meta = await drive.files.get({ fileId, fields: "mimeType" });
-        mimeType = meta.data.mimeType || "image/jpeg";
-      } catch {}
-      // Gemini Vision দিয়ে analyze করো
-      const analysisPrompt = prompt ||
-        "এই স্ক্রিনশটে কী লেখা আছে? সব টেক্সট হুবহু পড়ো। তারিখ, সময়, সব মেসেজ — কোনো কিছু বাদ দিও না। তারপর বাংলায় বিশ্লেষণ করো।";
-      const sys = buildSystemPrompt("", analysisPrompt);
+      const b64 = Buffer.from(r.data).toString("base64");
+
+      // filename ও তারিখ context যোগ করো — AI যেন ভুল তারিখ না বলে
+      const fileCtx = [
+        fileName    ? `Drive ফাইলের নাম: "${fileName}"` : "",
+        fileCreated ? `ফাইল তৈরির তারিখ (Drive): ${fileCreated.slice(0,10)}` : "",
+      ].filter(Boolean).join("\n");
+
+      const analysisPrompt = prompt || [
+        fileCtx,
+        "",
+        "উপরের Drive ফাইলের নাম ও তারিখ দেখো — এটাই এই screenshot-এর আসল তারিখের প্রমাণ।",
+        "এখন এই screenshot-এর ভেতরে যা লেখা আছে সব হুবহু পড়ো:",
+        "- প্রতিটি মেসেজ, তারিখ, সময়, sender-এর নাম — কিছু বাদ দিও না",
+        "- মেসেজ যে ভাষায় লেখা (বাংলা/English/Banglish) সে ভাষায় হুবহু উদ্ধৃত করো",
+        "- screenshot-এর ভেতরের তারিখ/সময় দেখো এবং Drive filename-এর তারিখের সাথে মিলিয়ে নাও",
+        "- অনুমান করবে না — শুধু যা স্পষ্ট দেখা যাচ্ছে তাই বলবে",
+        "তারপর বাংলায় সংক্ষিপ্ত বিশ্লেষণ করো।",
+      ].filter(Boolean).join("\n");
+
+      const sys = buildSystemPrompt("", "");
       const body = {
         systemInstruction: { role: "system", parts: [{ text: sys }] },
         contents: [{
@@ -933,7 +982,7 @@ function mount(prefix) {
             { inlineData: { mimeType, data: b64 } }
           ]
         }],
-        generationConfig: { temperature: 0.4, maxOutputTokens: 2048 },
+        generationConfig: { temperature: 0.2, maxOutputTokens: 2048 },
       };
       const { reply } = await chatWithFallback(body, true);
       res.json({ reply: reply || "স্ক্রিনশট পড়া গেল না।" });

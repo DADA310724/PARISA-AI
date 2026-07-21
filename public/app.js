@@ -519,6 +519,7 @@ PARISA MEMORY PORTAL এ আপনাকে স্বাগতম।
   async function speakAndWait(text, statusEl = null) {
     if (!text || !text.trim()) return;
     _stopAll();
+    _ensureAudioCtx(); // AudioContext unlock — autoplay policy bypass
     const clean = stripForTTS(text);
     if (!clean) return;
     if (statusEl) statusEl.innerHTML = `বলছি… <span class="tts-dots"><span></span><span></span><span></span></span>`;
@@ -842,6 +843,7 @@ PARISA MEMORY PORTAL এ আপনাকে স্বাগতম।
 
   async function startAudioCall() {
     if (!SR) { alert("ব্রাউজার ভয়েস কল সাপোর্ট করে না।"); return; }
+    _ensureAudioCtx(); // user gesture এর মধ্যেই AudioContext unlock করো
     callOn = true;
     $("#audioCallView").classList.add("is-open");
     $("#audioCallStatus").textContent = "শুনছি…";
@@ -950,16 +952,56 @@ PARISA MEMORY PORTAL এ আপনাকে স্বাগতম।
   $("#endVideoCall").onclick   = () => endVideoCall();
   $("#flipVideoCall").onclick  = async () => { vcFacing = vcFacing === "user" ? "environment" : "user"; await openVcCam(); };
   $("#muteVideoCall").onclick  = () => { if (vcRecognizer) vcRecognizer.stop(); };
+  // Video call-এ manual snapshot + voice input button
+  $("#askVideoBtn").onclick    = () => {
+    if (!vcOn) return;
+    if (!SR) { // SR নেই — সরাসরি snapshot পাঠাও
+      const img = snapshot($("#videoCallVideo"), $("#videoCallCanvas"));
+      const oldStatus = $("#videoCallStatus").textContent;
+      $("#videoCallStatus").textContent = "ভাবছি…";
+      fetch(api("/analyze"), {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ prompt: "এই ছবিতে কী দেখা যাচ্ছে? বাংলায় বলো।", file: img, mime: "image/jpeg", userName: settings.userName }),
+      }).then(r => r.json()).then(d => {
+        updateCaption($("#videoCallCaption"), d.reply || "কিছু বুঝলাম না।");
+        speakAndWait(d.reply || "", $("#videoCallStatus"));
+      }).catch(() => { $("#videoCallStatus").textContent = oldStatus; });
+      return;
+    }
+    // ভয়েস দিয়ে জিজ্ঞেস করো তারপর snapshot নাও
+    const r = makeRecognizer("bn-BD", false);
+    $("#videoCallStatus").textContent = "জিজ্ঞাসা করুন…";
+    let heard = "";
+    r.onresult = (e) => { for (let i = e.resultIndex; i < e.results.length; i++) if (e.results[i].isFinal) heard += e.results[i][0].transcript; };
+    r.onend = () => {
+      const img = snapshot($("#videoCallVideo"), $("#videoCallCanvas"));
+      const q = heard.trim() || "এই ছবিতে কী দেখা যাচ্ছে?";
+      $("#videoCallStatus").textContent = "ভাবছি…";
+      fetch(api("/analyze"), {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ prompt: q, file: img, mime: "image/jpeg", userName: settings.userName }),
+      }).then(r => r.json()).then(d => {
+        updateCaption($("#videoCallCaption"), d.reply || "কিছু বুঝলাম না।");
+        speakAndWait(d.reply || "", $("#videoCallStatus"));
+      }).catch(() => { $("#videoCallStatus").textContent = "কানেক্টেড"; });
+    };
+    r.onerror = () => { $("#videoCallStatus").textContent = "কানেক্টেড"; };
+    r.start();
+  };
 
   async function openVcCam() {
     try {
       if (vcStream) vcStream.getTracks().forEach(t => t.stop());
       vcStream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: vcFacing }, audio: false });
-      $("#videoCallVideo").srcObject = vcStream;
+      const vid = $("#videoCallVideo");
+      vid.srcObject = vcStream;
+      // srcObject সেট করার পর explicitly play() করতে হবে — autoplay policy
+      await vid.play().catch(() => {});
     } catch (e) { alert("ক্যামেরা চালু করা যাচ্ছে না: " + e.message); }
   }
   async function startVideoCall() {
     if (!SR) { alert("ব্রাউজার ভয়েস ইনপুট সাপোর্ট করে না।"); return; }
+    _ensureAudioCtx(); // user gesture-এর মধ্যে AudioContext unlock
     vcOn = true;
     $("#videoCallView").classList.add("is-open");
     $("#videoCallStatus").textContent = "কানেক্টেড";
