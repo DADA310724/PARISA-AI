@@ -846,10 +846,16 @@ PARISA MEMORY PORTAL এ আপনাকে স্বাগতম।
   // ── Speech-to-text ────────────────────────────────────────────────
   const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
   let recognizer = null, recOn = false;
-  function makeRecognizer(lang = "bn-BD", continuous = false) {
+
+  // Language fallback chain: bn-BD → bn-IN → (browser default)
+  const _langChain = ["bn-BD", "bn-IN", ""];
+  let _langIdx = 0; // current working lang index
+
+  function makeRecognizer(lang, continuous = false) {
     if (!SR) return null;
     const r = new SR();
-    r.lang = lang; r.interimResults = true; r.continuous = continuous;
+    r.lang = (lang !== undefined) ? lang : _langChain[_langIdx];
+    r.interimResults = true; r.continuous = continuous;
     return r;
   }
 
@@ -991,8 +997,22 @@ PARISA MEMORY PORTAL এ আপনাকে স্বাগতম।
 
   async function startAudioCall() {
     if (!SR) { alert("এই ব্রাউজারে ভয়েস ইনপুট সাপোর্ট করে না। Chrome বা Edge ব্যবহার করুন।"); return; }
-    _ensureAudioCtx(); // user gesture এর মধ্যেই AudioContext unlock করো
+    _ensureAudioCtx();
+    // Microphone permission check before opening call
+    if (navigator.mediaDevices && navigator.mediaDevices.getUserMedia) {
+      try {
+        const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+        stream.getTracks().forEach(t => t.stop()); // immediately release
+      } catch (e) {
+        if (e.name === "NotAllowedError" || e.name === "PermissionDeniedError") {
+          alert("মাইক্রোফোন অনুমতি দিন। Browser settings থেকে microphone permission দিন।");
+          return;
+        }
+        // If mic check fails for other reason, still try
+      }
+    }
     callOn = true;
+    _langIdx = 0; // reset lang fallback for fresh call
     $("#audioCallView").classList.add("is-open");
     $("#audioCallStatus").textContent = "শুনছি…";
     $("#audioCallCaption").innerHTML = "";
@@ -1023,7 +1043,7 @@ PARISA MEMORY PORTAL এ আপনাকে স্বাগতম।
     if ($("#audioCallStatus")) $("#audioCallStatus").textContent = "শুনছি…";
 
     // continuous=false: browser naturally stops after end-of-speech, far more reliable
-    const rec = makeRecognizer("bn-BD", false);
+    const rec = makeRecognizer(_langChain[_langIdx], false);
     if (!rec) return; // SR not available (shouldn't reach — already checked in startAudioCall)
     callRecognizer = rec;
     let heard = "", interim = "";
@@ -1072,14 +1092,29 @@ PARISA MEMORY PORTAL এ আপনাকে স্বাগতম।
       if (e.error === "no-speech") {
         // Normal — user just didn't speak in time, restart
         setTimeout(() => { if (callOn && _callSeq === seq) callLoop(); }, 300);
+      } else if (e.error === "language-not-supported" || e.error === "service-not-allowed") {
+        // Language fallback — try next lang in chain
+        if (_langIdx < _langChain.length - 1) {
+          _langIdx++;
+          if ($("#audioCallStatus")) $("#audioCallStatus").textContent = "ভাষা পরিবর্তন হচ্ছে…";
+        }
+        setTimeout(() => { if (callOn && _callSeq === seq) callLoop(); }, 500);
+      } else if (e.error === "not-allowed" || e.error === "audio-capture") {
+        // Microphone permission denied
+        if ($("#audioCallStatus")) $("#audioCallStatus").textContent = "মাইক্রোফোন অনুমতি দিন";
+        setCallState("thinking");
+        // Don't restart — wait for user action
       } else if (e.error !== "aborted") {
-        // Unexpected error — retry after delay
+        // Other error — retry after delay
         setTimeout(() => { if (callOn && _callSeq === seq) callLoop(); }, 800);
       }
     };
 
     try { rec.start(); }
-    catch { setTimeout(() => { if (callOn && _callSeq === seq) callLoop(); }, 600); }
+    catch (startErr) {
+      console.warn("rec.start error:", startErr);
+      setTimeout(() => { if (callOn && _callSeq === seq) callLoop(); }, 600);
+    }
   }
   async function callChat(text) {
     if (!getActive()) newChat();
@@ -1151,15 +1186,21 @@ PARISA MEMORY PORTAL এ আপনাকে স্বাগতম।
     } catch (e) { alert("ক্যামেরা চালু করা যাচ্ছে না: " + e.message); }
   }
   async function startVideoCall() {
-    // SR না থাকলেও ভিডিও কল চালু হবে — ক্যামেরা দেখাবে, askVideoBtn দিয়ে ম্যানুয়াল প্রশ্ন করা যাবে
-    _ensureAudioCtx(); // user gesture-এর মধ্যে AudioContext unlock
+    if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+      alert("এই ব্রাউজারে বা সংযোগে ক্যামেরা সাপোর্ট করে না। HTTPS এ অ্যাপ ব্যবহার করুন।");
+      return;
+    }
+    _ensureAudioCtx();
     vcOn = true;
+    _langIdx = 0;
     $("#videoCallView").classList.add("is-open");
-    $("#videoCallStatus").textContent = "কানেক্টেড";
+    $("#videoCallStatus").textContent = "ক্যামেরা চালু হচ্ছে…";
     $("#videoCallCaption").textContent = "";
+    updateUserCaption("", "vcUserCaption");
     await openVcCam();
     if (SR) {
-      videoCallLoop(); // ভয়েস লুপ শুধু SR থাকলে
+      $("#videoCallStatus").textContent = "শুনছি…";
+      videoCallLoop();
     } else {
       $("#videoCallStatus").textContent = "ক্যামেরা চালু — নিচের বাটন দিয়ে প্রশ্ন করুন";
     }
@@ -1185,7 +1226,7 @@ PARISA MEMORY PORTAL এ আপনাকে স্বাগতম।
 
     if ($("#videoCallStatus")) $("#videoCallStatus").textContent = "শুনছি…";
 
-    const rec = makeRecognizer("bn-BD", false);
+    const rec = makeRecognizer(_langChain[_langIdx], false);
     if (!rec) return;
     vcRecognizer = rec;
     let heard = "", interim = "";
@@ -1237,13 +1278,21 @@ PARISA MEMORY PORTAL এ আপনাকে স্বাগতম।
       if (!vcOn || _vcSeq !== seq) return;
       if (e.error === "no-speech") {
         setTimeout(() => { if (vcOn && _vcSeq === seq) videoCallLoop(); }, 300);
+      } else if (e.error === "language-not-supported" || e.error === "service-not-allowed") {
+        if (_langIdx < _langChain.length - 1) _langIdx++;
+        setTimeout(() => { if (vcOn && _vcSeq === seq) videoCallLoop(); }, 500);
+      } else if (e.error === "not-allowed" || e.error === "audio-capture") {
+        if ($("#videoCallStatus")) $("#videoCallStatus").textContent = "মাইক্রোফোন অনুমতি দিন";
       } else if (e.error !== "aborted") {
         setTimeout(() => { if (vcOn && _vcSeq === seq) videoCallLoop(); }, 800);
       }
     };
 
     try { rec.start(); }
-    catch { setTimeout(() => { if (vcOn && _vcSeq === seq) videoCallLoop(); }, 600); }
+    catch (startErr) {
+      console.warn("vcRec.start error:", startErr);
+      setTimeout(() => { if (vcOn && _vcSeq === seq) videoCallLoop(); }, 600);
+    }
   }
 
   // ── Welcome message (one-time) ────────────────────────────────────

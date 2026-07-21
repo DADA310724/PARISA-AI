@@ -18,7 +18,7 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const publicDir = path.join(__dirname, "public");
 
 // ভার্সন ফরম্যাট: V-<n> — প্রতিটি নতুন আপডেটে n ঠিক ১ করে বাড়বে (package.json-এর semver থেকে স্বাধীন)
-const APP_VERSION = "V-23";
+const APP_VERSION = "V-24";
 
 const app = express();
 app.use(cors());
@@ -723,9 +723,15 @@ RULE 4 — না পেলে সৎভাবে বলবে:
 
 RULE 5 — screenshot content:
 কোনো screenshot-এর ভেতরের লেখা তুমি জানো না।
-কেউ screenshot-এ কী লেখা আছে জিজ্ঞেস করলে বলবে: "📖 স্ক্রিনশট বিশ্লেষণ করুন বাটনে ক্লিক করুন।"
+কেউ screenshot-এ কী লেখা আছে জিজ্ঞেস করলে বলবে: "স্ক্রিনশটটি স্বয়ংক্রিয়ভাবে বিশ্লেষণ হচ্ছে।"
 কখনো screenshot-এর content নিজে থেকে বলবে না।
 ════════════════════════════════════════════════════════════════
+
+⚠️ TABLE ব্যবহারের কঠোর নিয়ম:
+- Table শুধুমাত্র ধাপ ৩-এ ব্যবহার করবে — অর্থাৎ যখন actual chat messages দেখাতে হয়।
+- সাধারণ প্রশ্নের উত্তর, পরিচয়, সংখ্যা জিজ্ঞাসা, আইনি তথ্য, বিশ্লেষণ, ব্লাক ম্যাজিক বিভাগ — এগুলোতে কখনো table ব্যবহার করবে না।
+- বিশেষত ধাপ ৪, ৫, ৬, ৭-এ plain text বা bullet points ব্যবহার করবে — table নয়।
+- Table দেখাবে শুধু যখন database থেকে actual message row দেখানো হচ্ছে।
 
 চ্যাট হিস্টরি ও বিশ্লেষণ দেখানোর নিয়ম — INVESTIGATIVE REPORT FORMAT:
 
