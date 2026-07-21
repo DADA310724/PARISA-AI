@@ -288,7 +288,7 @@ PARISA MEMORY PORTAL এ আপনাকে স্বাগতম।
       resultEl.innerHTML = renderMarkdown(reply);
       resultEl.classList.add("show");
       if (labelEl) labelEl.style.display = "none";
-      if (btn)    { btn.style.display = ""; }
+      // btn stays hidden (display:none) — auto-analysis done, no button needed
       scrollToBottom();
     } catch {
       _analyzedSS.delete(fid); // retry allowed
@@ -367,7 +367,7 @@ PARISA MEMORY PORTAL এ আপনাকে স্বাগতম।
   }
 
   // ── Sidebar open/close ───────────────────────────────────────────
-  function openSidebar()  { $("#sidebar").classList.add("open"); $("#sidebarScrim").classList.add("show"); }
+  function openSidebar()  { renderSidebar(); $("#sidebar").classList.add("open"); $("#sidebarScrim").classList.add("show"); }
   function closeSidebar() { $("#sidebar").classList.remove("open"); $("#sidebarScrim").classList.remove("show"); }
   $("#openSidebar").onclick  = openSidebar;
   $("#closeSidebar").onclick = closeSidebar;
