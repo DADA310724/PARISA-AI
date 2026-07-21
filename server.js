@@ -18,7 +18,7 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const publicDir = path.join(__dirname, "public");
 
 // ভার্সন ফরম্যাট: V-<n> — প্রতিটি নতুন আপডেটে n ঠিক ১ করে বাড়বে (package.json-এর semver থেকে স্বাধীন)
-const APP_VERSION = "V-20";
+const APP_VERSION = "V-21";
 
 const app = express();
 app.use(cors());
@@ -151,7 +151,7 @@ function searchChatDB(query) {
     জুলাই:"07",আগস্ট:"08",সেপ্টেম্বর:"09",অক্টোবর:"10",নভেম্বর:"11",ডিসেম্বর:"12",
   };
 
-  // file_id alias mapping (নতুন DB-তে file_id field)
+  // file_id alias mapping
   const FILE_ALIAS = {
     "my wife":"My_Wife","মাই ওয়াইফ":"My_Wife","wife":"My_Wife",
     "nusrat parisa":"Nusrat_Parisa","নুসরাত পারিসা":"Nusrat_Parisa",
@@ -175,28 +175,34 @@ function searchChatDB(query) {
   else if (q.includes("telegram") || q.includes("টেলিগ্রাম")) targetPlatform = "Telegram";
   else if (q.includes("messenger") || q.includes("facebook") || q.includes("ফেসবুক") || q.includes("মেসেঞ্জার")) targetPlatform = "Facebook Messenger";
 
-  // File filter
+  // File filter — দীর্ঘ alias আগে match করবে
   let targetFile = null;
-  for (const [alias, id] of Object.entries(FILE_ALIAS)) {
+  const sortedAliases = Object.entries(FILE_ALIAS).sort((a,b) => b[0].length - a[0].length);
+  for (const [alias, id] of sortedAliases) {
     if (q.includes(alias)) { targetFile = id; break; }
   }
 
-  // তারিখ খোঁজা
+  // তারিখ খোঁজা — একাধিক format support
   let targetDate = null;
   let targetYear = null;
+  let targetMonth = null; // শুধু মাস দিলে (কোনো তারিখ নেই)
 
-  const isoMatch = q.match(/(\d{4})-(\d{2})-(\d{2})/);
-  if (isoMatch) targetDate = `${isoMatch[1]}-${isoMatch[2]}-${isoMatch[3]}`;
+  // ISO format: 2025-01-04
+  const isoMatch = q.match(/(\d{4})[.\-\/](\d{1,2})[.\-\/](\d{1,2})/);
+  if (isoMatch) {
+    targetDate = `${isoMatch[1]}-${isoMatch[2].padStart(2,"0")}-${isoMatch[3].padStart(2,"0")}`;
+  }
 
+  // DD/MM/YYYY বা DD-MM-YYYY
   if (!targetDate) {
-    const dateNumPat = /(\d{1,2})[\/\-\.](\d{1,2})(?:[\/\-\.](\d{2,4}))?/;
-    const dm = q.match(dateNumPat);
-    if (dm) {
-      const dd = dm[1].padStart(2,"0"), mm = dm[2].padStart(2,"0");
-      targetDate = dm[3] ? `${dm[3].length===2?"20"+dm[3]:dm[3]}-${mm}-${dd}` : `-${mm}-${dd}`;
+    const dmyMatch = q.match(/(\d{1,2})[\/\-\.](\d{1,2})[\/\-\.](\d{2,4})/);
+    if (dmyMatch) {
+      const yr = dmyMatch[3].length === 2 ? "20"+dmyMatch[3] : dmyMatch[3];
+      targetDate = `${yr}-${dmyMatch[2].padStart(2,"0")}-${dmyMatch[1].padStart(2,"0")}`;
     }
   }
 
+  // "৪ জানুয়ারি ২০২৫" বা "4 january 2025" বা "4 জানুয়ারি"
   if (!targetDate) {
     const dateWordPat = /(\d{1,2})\s+([\u0980-\u09FFa-zA-Z]+)(?:\s+(\d{4}))?/i;
     const dm = q.match(dateWordPat);
@@ -204,16 +210,36 @@ function searchChatDB(query) {
       const mon = MONTH_MAP[dm[2].toLowerCase()];
       if (mon) {
         const dd = dm[1].padStart(2,"0");
-        targetDate = dm[3] ? `${dm[3]}-${mon}-${dd}` : `-${mon}-${dd}`;
+        if (dm[3]) {
+          targetDate = `${dm[3]}-${mon}-${dd}`;
+        } else {
+          // শুধু day+month — year ছাড়া, সব বছর খুঁজবে
+          targetDate = `-${mon}-${dd}`;
+        }
       }
     }
   }
 
+  // শুধু মাস + বছর: "জানুয়ারি ২০২৫" বা "january 2025"
+  if (!targetDate) {
+    for (const [monName, monNum] of Object.entries(MONTH_MAP)) {
+      if (q.includes(monName)) {
+        const yrM = q.match(/\b(202[0-9])\b/);
+        if (yrM) {
+          targetMonth = `${yrM[1]}-${monNum}`; // YYYY-MM
+        }
+        break;
+      }
+    }
+  }
+
+  // বছর
   const yrMatch = q.match(/\b(202[0-9])\b/);
   if (yrMatch) targetYear = yrMatch[1];
 
   const stopWords = new Set(["কথা","বলে","বলো","দেখা","দেখো","থেকে","হয়ে","করে","যাবে",
-    "আমাকে","আমার","তোমার","আছে","ছিল","করছে","কিন্তু","তখন","এবং","কেন","কি"]);
+    "আমাকে","আমার","তোমার","আছে","ছিল","করছে","কিন্তু","তখন","এবং","কেন","কি",
+    "চ্যাট","হিস্টরি","মেসেজ","দেখাও","দাও","বলো","show","chat","message"]);
   const keywords = q.split(/\s+/).filter(w => w.length > 2 && !stopWords.has(w));
 
   const found = [];
@@ -230,18 +256,28 @@ function searchChatDB(query) {
     if (targetFile && fileId !== targetFile) continue;
 
     let matched = false;
+
     if (targetDate) {
-      matched = targetDate.startsWith("-") ? ts.includes(targetDate) : ts.startsWith(targetDate);
-      if (matched && targetYear) matched = ts.startsWith(targetYear);
+      if (targetDate.startsWith("-")) {
+        // শুধু MM-DD match, সব বছর
+        matched = ts.slice(4).startsWith(targetDate); // ts = "YYYY-MM-DD HH:mm:ss"
+      } else {
+        matched = ts.startsWith(targetDate);
+      }
+    } else if (targetMonth) {
+      // YYYY-MM prefix match
+      matched = ts.startsWith(targetMonth);
     } else if (keywords.length) {
       matched = keywords.some(kw => txtL.includes(kw));
     }
+
     if (matched) found.push({ ts, snd, sndOrig, platform, fileId, txt });
   }
 
   if (!found.length) return "";
 
-  const limit = targetDate ? 300 : 80;
+  // তারিখ/মাস ভিত্তিক query-তে বেশি results, keyword-এ কম
+  const limit = (targetDate || targetMonth) ? 400 : 100;
   return found.slice(0, limit)
     .map(m => `[${m.platform}][${m.fileId}][${m.ts}] ${m.snd}(${m.sndOrig}): ${m.txt}`)
     .join("\n");
@@ -488,9 +524,12 @@ try {
 function buildSystemPrompt(userName = "আপনি", userQuery = "") {
   // Chat DB থেকে relevant messages খোঁজা
   const dbResults = userQuery ? searchChatDB(userQuery) : "";
-  const chatDBContext = dbResults
-    ? `\n\n--- চ্যাট ডাটাবেস থেকে প্রাসঙ্গিক মেসেজ ---\n${dbResults}\n--- শেষ ---`
-    : "";
+  const dbLineCount = dbResults ? dbResults.split("\n").filter(l => l.trim()).length : 0;
+
+  // Database result indicator — AI জানবে ঠিক কতটি real result আছে
+  const dbFoundLabel = dbLineCount > 0
+    ? `\n\n🟢 DATABASE QUERY RESULT: ${dbLineCount}টি মেসেজ পাওয়া গেছে।\n--- চ্যাট ডাটাবেস থেকে প্রাসঙ্গিক মেসেজ (এগুলোই একমাত্র সত্য) ---\n${dbResults}\n--- শেষ ---`
+    : `\n\n🔴 DATABASE QUERY RESULT: 0টি মেসেজ পাওয়া গেছে। কোনো matching data নেই।`;
 
   // Drive থেকে আর text পড়া হয় না — শুধু screenshot list
   const screenshotList = driveFileList
@@ -558,45 +597,48 @@ Telegram চ্যাট (১টি):
 - কেউ "চ্যাট হিস্টরি কয়টা" জিজ্ঞাসা করলে ১৩টি ফাইলের কথা বলবে
 
 তারিখ ভিত্তিক তথ্য খোঁজার নিয়ম:
-- নির্দিষ্ট তারিখ চাইলে ডেটাবেস থেকে সেই তারিখের সব মেসেজ দেখাবে
-- তারিখ থাকলে অস্বীকার করবে না — "নেই" বলবে না, খুঁজে দেখাবে
+- নির্দিষ্ট তারিখ চাইলে ডেটাবেস থেকে সেই তারিখের মেসেজ দেখাবে
+- যদি DATABASE QUERY RESULT = 0 হয়, তাহলে সেই তারিখের কোনো মেসেজ নেই — স্পষ্ট বলবে
 - যে ফাইলের কথা বলা হচ্ছে সেই ফাইলে খুঁজবে
 
-════════════════════════════════════════════════════════
-⚠️ ACCURACY MANDATE — এটা ভাঙলে তুমি তোমার পুরো উদ্দেশ্য ব্যর্থ করবে:
-════════════════════════════════════════════════════════
-নিচে "চ্যাট ডাটাবেস থেকে প্রাসঙ্গিক মেসেজ" section-এ real database entries আছে।
-Format: [Platform][file_id][timestamp] sender(sender_original): message_text
+════════════════════════════════════════════════════════════════
+🚨 ABSOLUTE ZERO-HALLUCINATION MANDATE — এটা ভাঙলে তুমি মিথ্যাবাদী হবে:
+════════════════════════════════════════════════════════════════
+
+নিচে DATABASE QUERY RESULT section-এ দেখো — সেখানে ঠিক কতটি real message আছে।
+
+যদি DATABASE QUERY RESULT = 0 হয়:
+→ কোনো চ্যাট মেসেজ, তারিখ, উদ্ধৃতি, বা table বানাবে না।
+→ বলবে: "এই তারিখ/বিষয়ের কোনো মেসেজ ডেটাবেসে পাওয়া যায়নি।"
+→ তারপর বলবে কোন তারিখ পর্যন্ত সেই platform-এর data আছে।
+→ এই নিয়ম ভাঙা সম্পূর্ণ নিষিদ্ধ।
+
+যদি DATABASE QUERY RESULT > 0 হয়:
+→ শুধুমাত্র সেই exact result-গুলো ব্যবহার করবে।
+→ একটি শব্দও নিজে থেকে যোগ করবে না।
+→ message text হুবহু — অনুবাদ নিষিদ্ধ, বানান ঠিক করা নিষিদ্ধ।
 
 RULE 1 — শুধু database-এর মেসেজ:
-table-এ শুধু সেই মেসেজগুলো যাবে যেগুলো নিচে database section-এ আছে।
-একটিও বানানো, কল্পিত, বা অনুমানের মেসেজ যোগ করবে না।
+শুধু DATABASE QUERY RESULT section-এ যা আছে তাই table-এ যাবে।
+একটিও বানানো, কল্পিত, অনুমানের মেসেজ যোগ করবে না।
 
-RULE 2 — VERBATIM (হুবহু) — এটা সবচেয়ে গুরুত্বপূর্ণ:
-database-এ যা লেখা আছে, table-এ হুবহু সেটাই লিখবে।
-অনুবাদ সম্পূর্ণ নিষিদ্ধ — এমনকি একটি শব্দও।
+RULE 2 — VERBATIM (হুবহু):
+database: "Block kore dichen" → table: "Block kore dichen" [ব্লক করে দিয়েছেন লেখা যাবে না]
+database: "amr jonno doa koro" → table: "amr jonno doa koro" [Banglish হুবহু রাখো]
+database: "ok" → table: "ok" ["ঠিক আছে" লেখা যাবে না]
 
-VERBATIM উদাহরণ (এগুলো ঠিক এভাবে রাখতে হবে):
-• database: "Assalamu Walaikum"       → table: "Assalamu Walaikum"       [আস্সালামুয়ালাইকুম লেখা যাবে না]
-• database: "Block kore dichen"       → table: "Block kore dichen"       [ব্লক করে দিয়েছেন লেখা যাবে না]
-• database: "I miss you so much"      → table: "I miss you so much"      [বাংলায় লেখা যাবে না]
-• database: "Keno amake miss koro"    → table: "Keno amake miss koro"    [কেন আমাকে মিস করো লেখা যাবে না]
-• database: "তুমি আমার সব কিছু"      → table: "তুমি আমার সব কিছু"      [একই থাকবে]
-• database: "ok"                      → table: "ok"                      ["ঠিক আছে" লেখা যাবে না]
-• database: "amr jonno doa koro"      → table: "amr jonno doa koro"      [Banglish হুবহু রাখো]
+RULE 3 — file_id ও timestamp হুবহু:
+database-এর timestamp ও file_id হুবহু লিখবে — নিজে বানাবে না।
 
-RULE 3 — সঠিক file_id:
-প্রতিটি মেসেজের file_id যা database-এ আছে, "অরিজিনাল ফাইল নাম" কলামে ঠিক সেটাই লিখবে।
-যে মেসেজ Nusrat_Parisa file-এর, সেটা My_Wife file-এর নামে দেওয়া যাবে না।
-
-RULE 4 — timestamp হুবহু:
-database-এর timestamp field-এ যা আছে সেটাই "তারিখ ও সময়" কলামে লিখবে।
-নিজে থেকে তারিখ বানাবে না।
-
-RULE 5 — না পেলে সৎভাবে বলবে:
-database-এ relevant মেসেজ না থাকলে বলবে: "এই তারিখ বা বিষয়ের মেসেজ ডেটাবেসে পাওয়া যায়নি।"
+RULE 4 — না পেলে সৎভাবে বলবে:
+"এই তারিখ বা বিষয়ের মেসেজ ডেটাবেসে পাওয়া যায়নি।"
 কখনো ফাঁকা table বা বানানো data দেবে না।
-════════════════════════════════════════════════════════
+
+RULE 5 — screenshot content:
+কোনো screenshot-এর ভেতরের লেখা তুমি জানো না।
+কেউ screenshot-এ কী লেখা আছে জিজ্ঞেস করলে বলবে: "📖 স্ক্রিনশট বিশ্লেষণ করুন বাটনে ক্লিক করুন।"
+কখনো screenshot-এর content নিজে থেকে বলবে না।
+════════════════════════════════════════════════════════════════
 
 চ্যাট হিস্টরি ও বিশ্লেষণ দেখানোর নিয়ম — INVESTIGATIVE REPORT FORMAT:
 
@@ -661,7 +703,7 @@ database-এ relevant মেসেজ না থাকলে বলবে: "এ�
 - বিয়ের বৈধতা প্রমাণের উপায়
 
 ${RUBEL_HISTORY}
-${chatDBContext}
+${dbFoundLabel}
 
 --- স্ক্রিনশট ফাইল তালিকা (${driveFileList.filter(f=>f.category==="screenshot").length}টি) ---
 ${screenshotList || "স্ক্রিনশট লোড হচ্ছে..."}
@@ -703,7 +745,7 @@ async function tryGroq(sys, contents) {
       fetch("https://api.groq.com/openai/v1/chat/completions", {
         method: "POST",
         headers: { "Content-Type": "application/json", Authorization: `Bearer ${key}` },
-        body: JSON.stringify({ model: "llama-3.3-70b-versatile", messages, temperature: 0.85 }),
+        body: JSON.stringify({ model: "llama-3.3-70b-versatile", messages, temperature: 0.15 }),
       })
     );
     const data = await r.json();
@@ -719,7 +761,7 @@ async function tryDeepseek(sys, contents) {
       fetch("https://api.deepseek.com/chat/completions", {
         method: "POST",
         headers: { "Content-Type": "application/json", Authorization: `Bearer ${key}` },
-        body: JSON.stringify({ model: "deepseek-chat", messages, temperature: 0.85 }),
+        body: JSON.stringify({ model: "deepseek-chat", messages, temperature: 0.15 }),
       })
     );
     const data = await r.json();
@@ -735,7 +777,7 @@ async function tryOpenRouter(sys, contents) {
       fetch("https://openrouter.ai/api/v1/chat/completions", {
         method: "POST",
         headers: { "Content-Type": "application/json", Authorization: `Bearer ${key}` },
-        body: JSON.stringify({ model: "google/gemini-2.0-flash-exp:free", messages, temperature: 0.85 }),
+        body: JSON.stringify({ model: "google/gemini-2.0-flash-exp:free", messages, temperature: 0.15 }),
       })
     );
     const data = await r.json();
@@ -1038,7 +1080,7 @@ function mount(prefix) {
       const body = {
         systemInstruction: { role: "system", parts: [{ text: sys }] },
         contents,
-        generationConfig: { temperature: 0.85, maxOutputTokens: 2048 },
+        generationConfig: { temperature: 0.15, maxOutputTokens: 2048 },
       };
       const { reply, provider } = await chatWithFallback(body, !!image);
       const rawReply = reply || "দুঃখিত, এই মুহূর্তে উত্তর দিতে পারছি না।";
