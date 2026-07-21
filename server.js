@@ -849,16 +849,16 @@ function xmlEsc(s) {
   return s.replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;").replace(/"/g,"&quot;").replace(/'/g,"&apos;");
 }
 
-// আবেগ অনুযায়ী SSML prosody তৈরি — প্রশ্ন/উত্তেজনা/দুঃখ detect করে pitch ও rate বদলায়
+// আবেগ অনুযায়ী SSML prosody তৈরি — শুধু rate বদলায়, pitch সবসময় +0% রাখা হয়
+// কারণ: pitch বাড়ালে ভয়েস "চিকন" হয়ে যায় — তাই pitch এখন স্থির।
 function buildEmotionalSSML(cleanText, voiceName) {
-  const isQuestion = cleanText.trim().endsWith("?");
-  const isExcited  = /[!]/.test(cleanText) || /ভালোবাস|খুশি|দারুণ|চমৎকার|অসাধারণ|সুন্দর/.test(cleanText);
-  const isSad      = /কষ্ট|দুঃখ|কাঁদ|কান্না|বেদনা|মিস করি|মনে পড়ে|হারিয়ে|চলে গেছ/.test(cleanText);
-  let rate = "+0%", pitch = "+0Hz";
-  if (isQuestion && !isSad) { pitch = "+10%"; }
-  if (isExcited && !isSad)  { rate = "+8%";  pitch = "+5%"; }
-  if (isSad)                { rate = "-8%";  pitch = "-5%"; }
-  return `<speak version='1.0' xmlns='http://www.w3.org/2001/10/synthesis' xml:lang='bn-BD'><voice name='${voiceName}'><prosody rate='${rate}' pitch='${pitch}'>${xmlEsc(cleanText)}</prosody></voice></speak>`;
+  const isExcited = /[!]/.test(cleanText) || /ভালোবাস|খুশি|দারুণ|চমৎকার|অসাধারণ|সুন্দর/.test(cleanText);
+  const isSad     = /কষ্ট|দুঃখ|কাঁদ|কান্না|বেদনা|মিস করি|মনে পড়ে|হারিয়ে|চলে গেছ/.test(cleanText);
+  let rate = "+0%";
+  if (isExcited && !isSad) rate = "+8%";
+  if (isSad)               rate = "-8%";
+  // pitch সবসময় +0% — এটা বাড়ালে NabanitaNeural চিকন হয়ে যায়
+  return `<speak version='1.0' xmlns='http://www.w3.org/2001/10/synthesis' xml:lang='bn-BD'><voice name='${voiceName}'><prosody rate='${rate}' pitch='+0%'>${xmlEsc(cleanText)}</prosody></voice></speak>`;
 }
 
 // শুধুমাত্র Microsoft Edge TTS — একাধিক লেভেলে রিট্রাই করে, কখনো silently fail করে না।
