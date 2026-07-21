@@ -123,7 +123,7 @@ PARISA MEMORY PORTAL এ আপনাকে স্বাগতম।
     return acts;
   }
 
-  // ── Investigative table enhancer: platform colors, Golden Age glow, ref-num badges ──
+  // ── Investigative table enhancer: platform colors, Golden Age glow, Phase badges ──
   function enhanceInvestigativeTable(html) {
     if (!html || !html.includes("<table")) return html;
     const wrap = document.createElement("div");
@@ -133,19 +133,55 @@ PARISA MEMORY PORTAL এ আপনাকে স্বাগতম।
       if (cells.length < 2) return;
       const dateText = (cells[0].textContent || "").trim();
       const platformText = (cells[1].textContent || "").trim().toLowerCase();
+
+      // Platform color borders
       if (platformText.includes("whatsapp")) tr.classList.add("whatsapp-row");
       else if (platformText.includes("telegram")) tr.classList.add("telegram-row");
       else if (platformText.includes("messenger") || platformText.includes("facebook")) tr.classList.add("messenger-row");
+
+      // Parse date for Phase detection
       const dm = dateText.match(/(\d{4})[.\-\/](\d{1,2})[.\-\/](\d{1,2})/);
       if (dm) {
         const y = +dm[1], mo = +dm[2];
-        if (y === 2024 && mo >= 2 && mo <= 7) tr.classList.add("golden-glow");
+        // Phase A: Feb-Jul 2024 — Golden Age glow
+        if (y === 2024 && mo >= 2 && mo <= 7) {
+          tr.classList.add("golden-glow");
+          tr.classList.add("phase-a-row");
+        }
+        // Phase B: Oct 2024 onwards — Shift
+        else if ((y === 2024 && mo >= 10) || (y === 2025 && mo <= 3)) tr.classList.add("phase-b-row");
+        // Phase D: Apr-Nov 2025 — Polarization
+        else if (y === 2025 && mo >= 4 && mo <= 11) tr.classList.add("phase-d-row");
       }
+
+      // Black magic rows
       const rowText = tr.textContent || "";
       if (/জাদু|ব্ল্যাক\s*ম্যাজিক|black\s*magic|তান্ত্রিক|কবিরাজ|হুজুর/i.test(rowText)) tr.classList.add("blackmagic-row");
+
+      // Phase badge — inject into analysis column (last td)
+      const lastCell = cells[cells.length - 1];
+      if (lastCell) {
+        const cellText = lastCell.textContent || "";
+        let phaseBadge = "";
+        if (/\[Phase A\]/i.test(cellText) || tr.classList.contains("phase-a-row")) {
+          phaseBadge = '<span class="phase-badge phase-a">Phase A</span>';
+        } else if (/\[Phase B\]/i.test(cellText) || tr.classList.contains("phase-b-row")) {
+          phaseBadge = '<span class="phase-badge phase-b">Phase B</span>';
+        } else if (/\[Phase C\]/i.test(cellText)) {
+          phaseBadge = '<span class="phase-badge phase-c">Phase C</span>';
+        } else if (/\[Phase D\]/i.test(cellText) || tr.classList.contains("phase-d-row")) {
+          phaseBadge = '<span class="phase-badge phase-d">Phase D</span>';
+        }
+        if (phaseBadge) {
+          // Remove [Phase X] text, inject badge
+          lastCell.innerHTML = lastCell.innerHTML.replace(/\[Phase [A-D]\]/gi, "").trim();
+          lastCell.innerHTML = phaseBadge + " " + lastCell.innerHTML;
+        }
+      }
     });
+    // Remove numeric ref-num badges [1], [2] etc — user doesn't want reference numbers
     wrap.querySelectorAll("td, p, li").forEach(el => {
-      el.innerHTML = el.innerHTML.replace(/\[([0-9০-৯]{1,2})\]/g, '<span class="ref-num">$1</span>');
+      el.innerHTML = el.innerHTML.replace(/\[([0-9০-৯]{1,2})\]/g, "");
     });
     return wrap.innerHTML;
   }
@@ -948,15 +984,17 @@ PARISA MEMORY PORTAL এ আপনাকে স্বাগতম।
       if ($("#audioCallStatus")) $("#audioCallStatus").textContent = "বলছি…";
       updateCaption($("#audioCallCaption"), reply);
       await speakAndWait(reply, $("#audioCallStatus"));
+      // recognizer আগে বন্ধ করো — তারপর aiReplying = false করো
+      // এই ক্রম না মানলে onend fires while aiReplying=false → double callLoop restart (race condition)
+      try { if (callRecognizer) callRecognizer.stop(); } catch {}
       aiReplying = false;
       if (!callOn || _callSeq !== mySeq) return;
       // শুনছি state — cyan ring
       setCallState("listening");
       if ($("#audioCallStatus")) $("#audioCallStatus").textContent = "শুনছি…";
       setTimeout(() => { if (callOn && _callSeq === mySeq) updateCaption($("#audioCallCaption"), ""); }, 2500);
-      // AI কথা বলা শেষ — recognizer থেমে থাকলে নতুনভাবে শুরু করো
-      try { if (callRecognizer) callRecognizer.stop(); } catch {}
-      setTimeout(() => { if (callOn) callLoop(); }, 350);
+      // Restart the loop — onend won't fire now (aiReplying was true when stop() was called)
+      setTimeout(() => { if (callOn && _callSeq === mySeq) callLoop(); }, 350);
     };
 
     callRecognizer.onstart = () => {
@@ -1117,13 +1155,13 @@ PARISA MEMORY PORTAL এ আপনাকে স্বাগতম।
       } catch {
         updateCaption($("#videoCallCaption"), "নেটওয়ার্ক সমস্যা");
       }
+      // recognizer আগে বন্ধ করো — race condition fix (same as audio call)
+      try { if (vcRecognizer) vcRecognizer.stop(); } catch {}
       aiReplying = false;
       if (!vcOn || _vcSeq !== mySeq) return;
       $("#videoCallStatus").textContent = "কানেক্টেড";
       setTimeout(() => { if (vcOn && _vcSeq === mySeq) updateCaption($("#videoCallCaption"), ""); }, 2500);
-      // AI কথা বলা শেষ — recognizer থেমে থাকলে নতুনভাবে শুরু করো
-      try { if (vcRecognizer) vcRecognizer.stop(); } catch {}
-      setTimeout(() => { if (vcOn) videoCallLoop(); }, 350);
+      setTimeout(() => { if (vcOn && _vcSeq === mySeq) videoCallLoop(); }, 350);
     };
 
     vcRecognizer.onstart = () => {
@@ -1263,5 +1301,7 @@ PARISA MEMORY PORTAL এ আপনাকে স্বাগতম।
 
   if (Object.keys(chats).length === 0) newChat();
   else { renderChat(); renderSidebar(); }
+  // সাইডবার সবসময় শুরু থেকে পুরনো চ্যাট দেখাবে — extra call ensures DOM ready
+  setTimeout(() => renderSidebar(), 0);
   showWelcomeIfFirst();
 })();

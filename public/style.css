@@ -1130,18 +1130,62 @@ textarea, input, select { font-family: inherit; color: inherit; }
 .msg table tr:hover td { background: rgba(95,232,255,.04); }
 .msg table tr:last-child td { border-bottom: none; }
 
-/* ══ Reference numbers [X] inside text ════════════════════════════ */
-.msg .ref-num {
+/* ══ Reference numbers [X] — hidden (user disabled) ══════════════ */
+.msg .ref-num { display: none; }
+
+/* ══ Behavioral Phase badges ══════════════════════════════════════ */
+.phase-badge {
   display: inline-block;
-  background: rgba(0,229,180,.12);
-  border: 1px solid rgba(0,229,180,.30);
-  color: #00e5b4;
-  border-radius: 4px;
-  padding: 0 4px;
-  font-size: 11px;
+  padding: 2px 7px;
+  border-radius: 5px;
+  font-size: 10px;
   font-weight: 700;
-  margin-left: 2px;
-  vertical-align: super;
+  letter-spacing: .04em;
+  margin-right: 4px;
+  vertical-align: middle;
+  white-space: nowrap;
+}
+/* Phase A — Golden Age — gold */
+.phase-badge.phase-a {
+  background: rgba(255,215,0,.18);
+  border: 1px solid rgba(255,215,0,.50);
+  color: #ffd700;
+}
+/* Phase B — Shift — orange */
+.phase-badge.phase-b {
+  background: rgba(255,140,0,.15);
+  border: 1px solid rgba(255,140,0,.45);
+  color: #ffaa33;
+}
+/* Phase C — Investigation Anchor — cyan */
+.phase-badge.phase-c {
+  background: rgba(0,200,255,.15);
+  border: 1px solid rgba(0,200,255,.45);
+  color: #00cfff;
+}
+/* Phase D — Polarization — red */
+.phase-badge.phase-d {
+  background: rgba(255,50,50,.15);
+  border: 1px solid rgba(255,50,50,.40);
+  color: #ff6b6b;
+}
+
+/* Phase row highlights */
+.phase-b-row { border-left: 4px solid #ffaa33 !important; }
+.phase-d-row { border-left: 4px solid #ff6b6b !important; background: rgba(255,50,50,.03) !important; }
+
+/* ══ Reference/comparison section boxes ══════════════════════════ */
+.msg .ref-section {
+  margin-top: 14px;
+  padding: 10px 14px;
+  border-radius: 12px;
+  border-left: 3px solid rgba(255,215,0,.6);
+  background: rgba(255,215,0,.04);
+  font-size: 13px;
+}
+.msg .ref-section-bad {
+  border-left-color: rgba(255,80,80,.6);
+  background: rgba(255,80,80,.04);
 }
 
 /* ══ Section headers inside AI messages ════════════════════════════ */
