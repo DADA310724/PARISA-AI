@@ -218,15 +218,68 @@ PARISA MEMORY PORTAL এ আপনাকে স্বাগতম।
     return html;
   }
 
-  // Screenshot placeholder → wrap with container + analyze button
+  // Screenshot placeholder → wrap with container (auto-analysis হবে)
   function replaceSsPlaceholders(html, imgBase) {
     return html.replace(/SSPLACEHOLDER_([A-Za-z0-9_\-]+)_SSPLACEHOLDER/g, (_, fid) =>
       `<div class="ss-wrap" data-ssid="${fid}">` +
         `<img src="${imgBase}${fid}" class="drive-img" alt="স্ক্রিনশট" loading="lazy" onerror="this.style.display='none'">` +
-        `<button class="analyze-ss-btn" data-ssid="${fid}">📖 স্ক্রিনশট বিশ্লেষণ করুন</button>` +
+        `<div class="ss-auto-label" id="ssl-${fid}">🔍 স্ক্রিনশট পড়া হচ্ছে…</div>` +
+        `<button class="analyze-ss-btn" data-ssid="${fid}" style="display:none">🔄 পুনরায় বিশ্লেষণ</button>` +
         `<div class="ss-result" id="ssr-${fid}"></div>` +
       `</div>`
     );
+  }
+
+  // ── Screenshot Auto-Analysis ──────────────────────────────────────
+  const _analyzedSS = new Set();
+
+  async function autoAnalyzeScreenshot(fid) {
+    if (_analyzedSS.has(fid)) return;
+    _analyzedSS.add(fid);
+    const resultEl  = document.getElementById("ssr-" + fid);
+    const labelEl   = document.getElementById("ssl-" + fid);
+    const btn       = document.querySelector(`.analyze-ss-btn[data-ssid="${fid}"]`);
+    if (!resultEl) return;
+
+    try {
+      const r = await fetch(api("/analyze-screenshot"), {
+        method:  "POST",
+        headers: { "Content-Type": "application/json" },
+        body:    JSON.stringify({ fileId: fid }),
+      });
+      const data  = await r.json();
+      const reply = data.reply || "পড়া গেল না।";
+      resultEl.innerHTML = renderMarkdown(reply);
+      resultEl.classList.add("show");
+      if (labelEl) labelEl.style.display = "none";
+      if (btn)    { btn.style.display = ""; }
+      scrollToBottom();
+    } catch {
+      _analyzedSS.delete(fid); // retry allowed
+      if (labelEl) labelEl.textContent = "⚠️ পড়তে পারিনি";
+      if (btn)     btn.style.display   = "";
+    }
+  }
+
+  function autoAnalyzeScreenshots(container) {
+    container.querySelectorAll(".ss-wrap[data-ssid]").forEach(wrap => {
+      const fid = wrap.dataset.ssid;
+      if (fid && !_analyzedSS.has(fid)) {
+        // ছবি লোড হওয়ার পর analyze করো
+        const img = wrap.querySelector("img.drive-img");
+        if (img && img.complete) {
+          setTimeout(() => autoAnalyzeScreenshot(fid), 300);
+        } else if (img) {
+          img.addEventListener("load",  () => setTimeout(() => autoAnalyzeScreenshot(fid), 300), { once: true });
+          img.addEventListener("error", () => {
+            const lbl = document.getElementById("ssl-" + fid);
+            if (lbl) lbl.textContent = "⚠️ ছবি লোড হয়নি";
+          }, { once: true });
+          // fallback: ছবি load event না আসলে ৩ সেকেন্ড পরে try করো
+          setTimeout(() => autoAnalyzeScreenshot(fid), 3000);
+        }
+      }
+    });
   }
   function scrollToBottom() { messagesEl.scrollTop = messagesEl.scrollHeight; }
   function escapeHtml(s) {
@@ -690,6 +743,7 @@ PARISA MEMORY PORTAL এ আপনাকে স্বাগতম।
       if (i >= full.length) {
         clearInterval(iv);
         bubble.appendChild(makeMsgActions(full, bubble));
+        autoAnalyzeScreenshots(bubble); // ← screenshot auto-read
         onDone();
       }
     }, 18);
@@ -1146,7 +1200,7 @@ PARISA MEMORY PORTAL এ আপনাকে স্বাগতম।
     scrollToBottom();
   }
 
-  // ── Screenshot analyze button — event delegation ──────────────────
+  // ── Screenshot re-analyze button — event delegation ──────────────
   messagesEl.addEventListener("click", async (e) => {
     const btn = e.target.closest(".analyze-ss-btn");
     if (!btn) return;
@@ -1155,8 +1209,10 @@ PARISA MEMORY PORTAL এ আপনাকে স্বাগতম।
     const resultEl = document.getElementById("ssr-" + fid);
     if (!resultEl) return;
 
-    btn.classList.add("loading");
-    btn.textContent = "পড়ছি…";
+    // Force re-analyze (remove from cache so it re-fetches)
+    _analyzedSS.delete(fid);
+    btn.textContent = "🔍 পড়ছি…";
+    btn.disabled = true;
 
     try {
       const r = await fetch(api("/analyze-screenshot"), {
@@ -1164,18 +1220,18 @@ PARISA MEMORY PORTAL এ আপনাকে স্বাগতম।
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ fileId: fid }),
       });
-      const data = await r.json();
+      const data  = await r.json();
       const reply = data.reply || "পড়া গেল না।";
       resultEl.innerHTML = renderMarkdown(reply);
       resultEl.classList.add("show");
-      // Also speak the result
+      _analyzedSS.add(fid);
       speak(reply);
     } catch {
       resultEl.textContent = "নেটওয়ার্ক সমস্যা — আবার চেষ্টা করুন।";
       resultEl.classList.add("show");
     }
-    btn.classList.remove("loading");
-    btn.textContent = "📖 স্ক্রিনশট বিশ্লেষণ করুন";
+    btn.textContent = "🔄 পুনরায় বিশ্লেষণ";
+    btn.disabled = false;
     scrollToBottom();
   });
 

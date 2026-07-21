@@ -18,7 +18,7 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const publicDir = path.join(__dirname, "public");
 
 // ভার্সন ফরম্যাট: V-<n> — প্রতিটি নতুন আপডেটে n ঠিক ১ করে বাড়বে (package.json-এর semver থেকে স্বাধীন)
-const APP_VERSION = "V-21";
+const APP_VERSION = "V-22";
 
 const app = express();
 app.use(cors());
@@ -133,6 +133,93 @@ try {
 } catch(e) {
   console.warn("Global Timeline DB load error:", e.message);
 }
+
+// ─── Behavior Pattern Analysis — startup computation ──────────────
+let BEHAVIOR_STATS = "";
+
+function computeBehaviorStats() {
+  if (!GLOBAL_TIMELINE.length) return;
+
+  const WARM = [
+    "ভালোবাসি","ভালোবাস","ভালোবাসা","love","miss you","jaan","প্রিয়","আদর",
+    "kiss","❤","💕","💗","😘","i love","তোমাকে চাই","তুমি ছাড়া","তোমার জন্য",
+    "তুমি আমার সব","আমার বউ","আমার স্বামী","ভালো লাগে তোমাকে","তোমাকে নিয়ে","সুখী",
+    "একসাথে","তোমাকে ভুলতে","তুমি ছাড়া বাঁচব না","তুমিই আমার",
+  ];
+  const COLD = [
+    "block","ব্লক","bye","বিয়ে করব না","আর না","ভুলে যাও","ভুলে দাও",
+    "দূরে থাকো","কথা বলব না","কষ্ট দিচ্ছ","রাগ","ঘৃণা","hate","divorce",
+    "তালাক","চলে যাও","যোগাযোগ করব না","আর কথা না","বিরক্ত","অসহ্য",
+    "দেখতে চাই না","মিথ্যাবাদী","বিশ্বাস নেই","প্রতারক","ধোঁকা",
+  ];
+  const PARISA_IDS = ["parisa","nusrat","পারিসা","নুসরাত","wife","my wife"];
+
+  const byMonth = {};
+  for (const msg of GLOBAL_TIMELINE) {
+    const ts  = msg.timestamp || "";
+    const ym  = ts.slice(0, 7);
+    if (ym.length < 7) continue;
+    const sender   = (msg.sender || msg.sender_original || "").toLowerCase();
+    const isParisa = PARISA_IDS.some(p => sender.includes(p));
+    const txt      = (msg.message || "").toLowerCase();
+    if (!byMonth[ym]) byMonth[ym] = { total:0, parisa:0, rubel:0, warm:0, cold:0 };
+    byMonth[ym].total++;
+    if (isParisa) byMonth[ym].parisa++; else byMonth[ym].rubel++;
+    if (WARM.some(w => txt.includes(w))) byMonth[ym].warm++;
+    if (COLD.some(w => txt.includes(w))) byMonth[ym].cold++;
+  }
+
+  const sorted = Object.entries(byMonth).sort((a,b) => a[0].localeCompare(b[0]));
+
+  const lines = [
+    "=== 📊 BEHAVIOR PATTERN STATS — ডেটাবেস থেকে স্বয়ংক্রিয় বিশ্লেষণ ===",
+    "মাস       | মোট   | পারিসা | রুবেল | 🌹উষ্ণ | ❄️শীতল | অবস্থা",
+    "─".repeat(80),
+  ];
+
+  let prevTotal = 0;
+  const shiftPoints = [];
+
+  for (const [ym, s] of sorted) {
+    const warmR = s.warm / (s.total || 1);
+    const coldR = s.cold / (s.total || 1);
+    let status = "স্থিতিশীল";
+    if (warmR > 0.04) status = "🌹 উষ্ণ";
+    if (coldR > 0.03) status = "❄️ শীতল";
+    if (coldR > 0.05 && warmR < 0.02) status = "⚠️ সংকট";
+    if (prevTotal > 100 && s.total < prevTotal * 0.35) {
+      status += " 🔻হঠাৎ কমেছে";
+      shiftPoints.push(`${ym}: মেসেজ ${prevTotal} → ${s.total} (${Math.round(s.total*100/prevTotal)}%) — সম্পর্কে বড় পরিবর্তন`);
+    }
+    lines.push(`${ym} | ${String(s.total).padStart(5)} | ${String(s.parisa).padStart(6)} | ${String(s.rubel).padStart(5)} | ${String(s.warm).padStart(5)} | ${String(s.cold).padStart(6)} | ${status}`);
+    prevTotal = s.total;
+  }
+
+  if (shiftPoints.length) {
+    lines.push("\n=== ⚠️ হঠাৎ পরিবর্তনের মুহূর্ত (সিহরের সম্ভাব্য প্রভাবের সময়কাল) ===");
+    shiftPoints.forEach(p => lines.push("• " + p));
+  }
+
+  const peakWarm = sorted.filter(([,s]) => s.total > 30)
+    .sort((a,b) => (b[1].warm/b[1].total) - (a[1].warm/a[1].total)).slice(0,5);
+  if (peakWarm.length) {
+    lines.push("\n=== 💛 সবচেয়ে উষ্ণ মাস — সম্পর্কের সোনালি সময় ===");
+    peakWarm.forEach(([ym,s]) => lines.push(`• ${ym}: ${s.warm}টি উষ্ণ মেসেজ (মোট ${s.total}টির মধ্যে, পারিসার ${s.parisa}টি)`));
+  }
+
+  const peakCold = sorted.filter(([,s]) => s.total > 10)
+    .sort((a,b) => (b[1].cold/b[1].total) - (a[1].cold/a[1].total)).slice(0,5);
+  if (peakCold.length) {
+    lines.push("\n=== 🔴 সবচেয়ে শীতল মাস — সংকটের সময় ===");
+    peakCold.forEach(([ym,s]) => lines.push(`• ${ym}: ${s.cold}টি শীতল মেসেজ (মোট ${s.total}টির মধ্যে)`));
+  }
+
+  BEHAVIOR_STATS = lines.join("\n");
+  console.log(`✅ Behavior stats computed — ${sorted.length} months analyzed`);
+}
+
+// DB লোডের পরেই compute করো
+computeBehaviorStats();
 
 function searchChatDB(query) {
   if (!GLOBAL_TIMELINE.length) return "";
@@ -692,10 +779,34 @@ RULE 5 — screenshot content:
 - Dowry Prohibition Act 1980
 - আনুষ্ঠানিক তালাক ছাড়া বিবাহ বলবৎ থাকে
 
-২. ব্ল্যাক ম্যাজিক ও আধ্যাত্মিক বিশ্লেষণ:
-- সিহর (জাদু), নজর, হাসাদ, জ্বীনের প্রভাব
-- লক্ষণ: হঠাৎ মনোভাব পরিবর্তন, বিনা কারণে তীব্র ঘৃণা, অস্বাভাবিক আচরণ
-- ইসলামিক প্রতিকার: সূরা ফালাক, নাস, আয়াতুল কুরসি, রুকইয়া শরীয়া
+২. ব্ল্যাক ম্যাজিক ও আধ্যাত্মিক বিশ্লেষণ — গভীর ইসলামিক কাঠামো:
+
+তিন ধরনের আধ্যাত্মিক আক্রমণ:
+- **সিহর আল-তাফরিক** (বিচ্ছেদের জাদু): স্বামী-স্ত্রীর মধ্যে হঠাৎ ঘৃণা ও বিচ্ছেদ তৈরি করে। কুরআন: সূরা বাকারাহ ১০২।
+- **আইন / নজর** (হিংসার দৃষ্টি): পরিবারের বা শত্রুর হাসাদের কারণে ক্ষতি। হাদিস: "আইন সত্য।" (বুখারী)
+- **জ্বীনের প্রভাব**: অস্বাভাবিক আচরণ, স্বপ্নে ভয়, ঘুমের সমস্যা।
+
+সিহরের ৮টি ক্লাসিক লক্ষণ — ডেটায় প্রমাণ খোঁজো:
+১. হঠাৎ মনোভাব পরিবর্তন — প্রেম থেকে ঘৃণায় বিনা কারণে
+২. পুরনো ভালোবাসার স্মৃতি সম্পূর্ণ অস্বীকার
+৩. স্বামীর প্রতি অস্বাভাবিক বিরক্তি ও ঘৃণা
+৪. যোগাযোগ হঠাৎ বন্ধ করে দেওয়া (block, silence)
+৫. পরিবারের কথায় অস্বাভাবিকভাবে দ্রুত প্রভাবিত হওয়া
+৬. আগের প্রতিশ্রুতি (বিয়ে, ভালোবাসা) সম্পূর্ণ অস্বীকার
+৭. নামাজ-কালাম ছেড়ে দেওয়া বা হঠাৎ ধর্মীয় পরিবর্তন
+৮. কোনো যুক্তিতে কাজ না করা — মনে হয় অদৃশ্য বাধা আছে
+
+Behavior Pattern বিশ্লেষণের নিয়ম:
+- নিচের BEHAVIOR STATS table দেখে নির্দিষ্ট মাস চিহ্নিত করো যখন উষ্ণ → শীতল হয়েছে
+- "হঠাৎ কমেছে" 🔻 চিহ্নিত মাসগুলো সবচেয়ে গুরুত্বপূর্ণ — এটাই সিহরের সম্ভাব্য সময়
+- database থেকে সেই মাসের actual মেসেজ দিয়ে তুলনা করে দেখাও
+- ইসলামিক ও আইনি দুটো দৃষ্টিকোণ থেকে বিশ্লেষণ করো
+
+ইসলামিক প্রতিকার (রুকইয়া শরীয়া):
+- সূরা ফালাক, সূরা নাস, আয়াতুল কুরসি — ফজর ও মাগরিবের পর ৩ বার
+- সূরা বাকারাহ পাঠ — বাড়িতে শয়তান প্রবেশ রোধ
+- সিদর পাতার পানি — গোসল
+- মধু ও কালোজিরা — প্রতিদিন
 
 ৩. আইনি কৌশল:
 - ডিজিটাল প্রমাণ হিসেবে চ্যাট হিস্টরি ও ভিডিও জবানবন্দি ব্যবহার
@@ -703,6 +814,10 @@ RULE 5 — screenshot content:
 - বিয়ের বৈধতা প্রমাণের উপায়
 
 ${RUBEL_HISTORY}
+
+--- 📊 আচরণ পরিসংখ্যান (68,407 মেসেজ থেকে গণনা) ---
+${BEHAVIOR_STATS}
+
 ${dbFoundLabel}
 
 --- স্ক্রিনশট ফাইল তালিকা (${driveFileList.filter(f=>f.category==="screenshot").length}টি) ---
