@@ -256,8 +256,12 @@ PARISA MEMORY PORTAL এ আপনাকে স্বাগতম।
       scrollToBottom();
     } catch {
       _analyzedSS.delete(fid); // retry allowed
-      if (labelEl) labelEl.textContent = "⚠️ পড়তে পারিনি";
+      if (labelEl) labelEl.textContent = "⚠️ পড়তে পারিনি — পুনরায় চেষ্টা হচ্ছে…";
       if (btn)     btn.style.display   = "";
+      // ৫ সেকেন্ড পর auto-retry একবার
+      setTimeout(() => {
+        if (!_analyzedSS.has(fid)) autoAnalyzeScreenshot(fid);
+      }, 5000);
     }
   }
 
@@ -896,7 +900,7 @@ PARISA MEMORY PORTAL এ আপনাকে স্বাগতম।
   }
 
   async function startAudioCall() {
-    if (!SR) { alert("ব্রাউজার ভয়েস কল সাপোর্ট করে না।"); return; }
+    if (!SR) { alert("এই ব্রাউজারে ভয়েস ইনপুট সাপোর্ট করে না। Chrome বা Edge ব্যবহার করুন।"); return; }
     _ensureAudioCtx(); // user gesture এর মধ্যেই AudioContext unlock করো
     callOn = true;
     $("#audioCallView").classList.add("is-open");
@@ -950,6 +954,9 @@ PARISA MEMORY PORTAL এ আপনাকে স্বাগতম।
       setCallState("listening");
       if ($("#audioCallStatus")) $("#audioCallStatus").textContent = "শুনছি…";
       setTimeout(() => { if (callOn && _callSeq === mySeq) updateCaption($("#audioCallCaption"), ""); }, 2500);
+      // AI কথা বলা শেষ — recognizer থেমে থাকলে নতুনভাবে শুরু করো
+      try { if (callRecognizer) callRecognizer.stop(); } catch {}
+      setTimeout(() => { if (callOn) callLoop(); }, 350);
     };
 
     callRecognizer.onstart = () => {
@@ -1054,14 +1061,18 @@ PARISA MEMORY PORTAL এ আপনাকে স্বাগতম।
     } catch (e) { alert("ক্যামেরা চালু করা যাচ্ছে না: " + e.message); }
   }
   async function startVideoCall() {
-    if (!SR) { alert("ব্রাউজার ভয়েস ইনপুট সাপোর্ট করে না।"); return; }
+    // SR না থাকলেও ভিডিও কল চালু হবে — ক্যামেরা দেখাবে, askVideoBtn দিয়ে ম্যানুয়াল প্রশ্ন করা যাবে
     _ensureAudioCtx(); // user gesture-এর মধ্যে AudioContext unlock
     vcOn = true;
     $("#videoCallView").classList.add("is-open");
     $("#videoCallStatus").textContent = "কানেক্টেড";
     $("#videoCallCaption").textContent = "";
     await openVcCam();
-    videoCallLoop();
+    if (SR) {
+      videoCallLoop(); // ভয়েস লুপ শুধু SR থাকলে
+    } else {
+      $("#videoCallStatus").textContent = "ক্যামেরা চালু — নিচের বাটন দিয়ে প্রশ্ন করুন";
+    }
   }
   function endVideoCall() {
     vcOn = false;
@@ -1110,6 +1121,9 @@ PARISA MEMORY PORTAL এ আপনাকে স্বাগতম।
       if (!vcOn || _vcSeq !== mySeq) return;
       $("#videoCallStatus").textContent = "কানেক্টেড";
       setTimeout(() => { if (vcOn && _vcSeq === mySeq) updateCaption($("#videoCallCaption"), ""); }, 2500);
+      // AI কথা বলা শেষ — recognizer থেমে থাকলে নতুনভাবে শুরু করো
+      try { if (vcRecognizer) vcRecognizer.stop(); } catch {}
+      setTimeout(() => { if (vcOn) videoCallLoop(); }, 350);
     };
 
     vcRecognizer.onstart = () => {
