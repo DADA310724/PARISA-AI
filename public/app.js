@@ -609,13 +609,14 @@ PARISA MEMORY PORTAL এ আপনাকে স্বাগতম।
     }
   }
 
-  async function speakAndWait(text, statusEl = null) {
+  // speakAndWait — Gemini-style progressive caption synced to audio duration
+  async function speakAndWait(text, captionEl = null, statusEl = null) {
     if (!text || !text.trim()) return;
     _stopAll();
-    _ensureAudioCtx(); // AudioContext unlock — autoplay policy bypass
+    _ensureAudioCtx();
     const clean = stripForTTS(text);
     if (!clean) return;
-    if (statusEl) statusEl.innerHTML = `বলছি… <span class="tts-dots"><span></span><span></span><span></span></span>`;
+    if (statusEl) statusEl.textContent = "বলছি…";
 
     const blob = await _fetchVoiceBlob(clean);
     if (!blob) {
@@ -625,11 +626,64 @@ PARISA MEMORY PORTAL এ আপনাকে স্বাগতম।
 
     const url = URL.createObjectURL(blob);
     currentAudio = new Audio(url);
+
+    // ── Gemini-style: words appear one-by-one synced to audio duration ──
+    if (captionEl) {
+      const words = clean.split(/\s+/).filter(Boolean);
+      let capTimer = null;
+      captionEl.innerHTML = "";
+      captionEl.style.opacity = "1";
+      captionEl.style.transition = "";
+
+      const startWordReveal = (dur) => {
+        if (capTimer) clearInterval(capTimer);
+        const msPerWord = Math.max(55, Math.min(320, (dur * 900) / Math.max(words.length, 1)));
+        let idx = 0;
+        capTimer = setInterval(() => {
+          if (idx < words.length) {
+            const sp = document.createElement("span");
+            sp.className = "cap-word";
+            sp.textContent = words[idx] + " ";
+            captionEl.appendChild(sp);
+            idx++;
+          } else { clearInterval(capTimer); }
+        }, msPerWord);
+      };
+
+      currentAudio.addEventListener("loadedmetadata", () => {
+        const dur = isFinite(currentAudio.duration) && currentAudio.duration > 0
+          ? currentAudio.duration : 4;
+        startWordReveal(dur);
+      }, { once: true });
+
+      // fallback: loadedmetadata may not fire before playback on some browsers
+      setTimeout(() => {
+        if (captionEl && !captionEl.children.length) startWordReveal(5);
+      }, 350);
+
+      // cleanup on stop
+      ["ended","error"].forEach(ev => {
+        currentAudio.addEventListener(ev, () => clearInterval(capTimer), { once: true });
+      });
+    }
+
     await new Promise(res => {
-      currentAudio.onended = () => { currentAudio = null; URL.revokeObjectURL(url); res(); };
-      currentAudio.onerror = () => { currentAudio = null; URL.revokeObjectURL(url); res(); };
-      currentAudio.play().catch(() => { currentAudio = null; URL.revokeObjectURL(url); res(); });
+      const done = () => { currentAudio = null; URL.revokeObjectURL(url); res(); };
+      currentAudio.addEventListener("ended", done, { once: true });
+      currentAudio.addEventListener("error", done, { once: true });
+      currentAudio.play().catch(() => done());
     });
+
+    // Fade caption out 1.8 s after speaking ends
+    if (captionEl && captionEl.children.length) {
+      await new Promise(r => setTimeout(r, 1800));
+      captionEl.style.transition = "opacity 0.55s ease";
+      captionEl.style.opacity = "0";
+      await new Promise(r => setTimeout(r, 600));
+      captionEl.innerHTML = "";
+      captionEl.style.opacity = "1";
+      captionEl.style.transition = "";
+    }
   }
 
   // ── Composer ─────────────────────────────────────────────────────
@@ -959,75 +1013,73 @@ PARISA MEMORY PORTAL এ আপনাকে স্বাগতম।
       renderChat();
     }
   }
+  // ── Audio call loop — continuous=false, cleaner one-utterance-at-a-time design ──
   let _callSeq = 0;
   function callLoop() {
     if (!callOn) return;
-    const mySeq = ++_callSeq;
-    callRecognizer = makeRecognizer("bn-BD", true);
-    if (!callRecognizer) return;
+    const seq = ++_callSeq;
 
-    let buffer = "", silenceTimer = null, aiReplying = false;
+    setCallState("listening");
+    if ($("#audioCallStatus")) $("#audioCallStatus").textContent = "শুনছি…";
 
-    const handleSend = async () => {
-      const said = buffer.trim();
-      buffer = "";
-      if (!said || !callOn || _callSeq !== mySeq) return;
-      aiReplying = true;
+    // continuous=false: browser naturally stops after end-of-speech, far more reliable
+    const rec = makeRecognizer("bn-BD", false);
+    if (!rec) return; // SR not available (shouldn't reach — already checked in startAudioCall)
+    callRecognizer = rec;
+    let heard = "", interim = "";
+
+    rec.onresult = (e) => {
+      heard = ""; interim = "";
+      for (let i = e.resultIndex; i < e.results.length; i++) {
+        const t = e.results[i][0].transcript;
+        if (e.results[i].isFinal) heard += t; else interim += t;
+      }
+      updateUserCaption(heard || interim, "userCaption");
+      // Barge-in: if user speaks while AI is talking, stop AI immediately
+      if ((heard || interim).trim() && (currentAudio || currentUtter)) _stopAll();
+    };
+
+    rec.onend = async () => {
+      if (!callOn || _callSeq !== seq) return;
+      const said = heard.trim();
       updateUserCaption("", "userCaption");
-      // ভাবছি state — yellow ring
+
+      if (!said) {
+        // No speech detected — restart listening quietly
+        setTimeout(() => { if (callOn && _callSeq === seq) callLoop(); }, 300);
+        return;
+      }
+
+      // Speech detected → AI → speak
       setCallState("thinking");
       if ($("#audioCallStatus")) $("#audioCallStatus").textContent = "ভাবছি…";
       const reply = await callChat(said);
-      if (!callOn || _callSeq !== mySeq) { aiReplying = false; return; }
-      // বলছি state — green ring
+      if (!callOn || _callSeq !== seq) return;
+
       setCallState("talking");
       if ($("#audioCallStatus")) $("#audioCallStatus").textContent = "বলছি…";
-      updateCaption($("#audioCallCaption"), reply);
-      await speakAndWait(reply, $("#audioCallStatus"));
-      // recognizer আগে বন্ধ করো — তারপর aiReplying = false করো
-      // এই ক্রম না মানলে onend fires while aiReplying=false → double callLoop restart (race condition)
-      try { if (callRecognizer) callRecognizer.stop(); } catch {}
-      aiReplying = false;
-      if (!callOn || _callSeq !== mySeq) return;
-      // শুনছি state — cyan ring
+      await speakAndWait(reply, $("#audioCallCaption"), $("#audioCallStatus"));
+      if (!callOn || _callSeq !== seq) return;
+
+      // Done speaking — restart listening
       setCallState("listening");
       if ($("#audioCallStatus")) $("#audioCallStatus").textContent = "শুনছি…";
-      setTimeout(() => { if (callOn && _callSeq === mySeq) updateCaption($("#audioCallCaption"), ""); }, 2500);
-      // Restart the loop — onend won't fire now (aiReplying was true when stop() was called)
-      setTimeout(() => { if (callOn && _callSeq === mySeq) callLoop(); }, 350);
+      setTimeout(() => { if (callOn && _callSeq === seq) callLoop(); }, 350);
     };
 
-    callRecognizer.onstart = () => {
-      if (currentAudio || currentUtter) { _stopAll(); aiReplying = false; }
-      setCallState("listening");
-      if ($("#audioCallStatus")) $("#audioCallStatus").textContent = "শুনছি…";
-    };
-    callRecognizer.onresult = (e) => {
-      let interim = "";
-      for (let i = e.resultIndex; i < e.results.length; i++) {
-        const t = e.results[i][0].transcript;
-        if (e.results[i].isFinal) buffer += t; else interim += t;
+    rec.onerror = (e) => {
+      if (!callOn || _callSeq !== seq) return;
+      if (e.error === "no-speech") {
+        // Normal — user just didn't speak in time, restart
+        setTimeout(() => { if (callOn && _callSeq === seq) callLoop(); }, 300);
+      } else if (e.error !== "aborted") {
+        // Unexpected error — retry after delay
+        setTimeout(() => { if (callOn && _callSeq === seq) callLoop(); }, 800);
       }
-      // Barge-in: user started talking while AI is speaking
-      if (interim.trim() && (currentAudio || currentUtter)) {
-        _stopAll(); aiReplying = false;
-        updateCaption($("#audioCallCaption"), "");
-        setWave("listening");
-        $("#audioCallStatus").textContent = "শুনছি…";
-      }
-      // Show user speech in top caption (smaller, italic)
-      updateUserCaption(buffer + interim, "userCaption");
-      if (silenceTimer) clearTimeout(silenceTimer);
-      if (buffer.trim() || interim.trim()) silenceTimer = setTimeout(handleSend, 1500);
     };
-    callRecognizer.onerror = (e) => {
-      if (e.error === "aborted") return;
-      if (callOn && _callSeq === mySeq && !aiReplying) setTimeout(callLoop, 600);
-    };
-    callRecognizer.onend = () => {
-      if (callOn && _callSeq === mySeq && !aiReplying) setTimeout(callLoop, 200);
-    };
-    try { callRecognizer.start(); } catch { if (callOn) setTimeout(callLoop, 500); }
+
+    try { rec.start(); }
+    catch { setTimeout(() => { if (callOn && _callSeq === seq) callLoop(); }, 600); }
   }
   async function callChat(text) {
     if (!getActive()) newChat();
@@ -1125,22 +1177,40 @@ PARISA MEMORY PORTAL এ আপনাকে স্বাগতম।
       renderChat();
     }
   }
+  // ── Video call loop — same continuous=false design as audio call ──
   let _vcSeq = 0;
   function videoCallLoop() {
     if (!vcOn) return;
-    const mySeq = ++_vcSeq;
-    vcRecognizer = makeRecognizer("bn-BD", true);
-    if (!vcRecognizer) return;
+    const seq = ++_vcSeq;
 
-    let buffer = "", silenceTimer = null, aiReplying = false;
+    if ($("#videoCallStatus")) $("#videoCallStatus").textContent = "শুনছি…";
 
-    const handleSend = async () => {
-      const said = buffer.trim();
-      buffer = "";
-      if (!said || !vcOn || _vcSeq !== mySeq) return;
-      aiReplying = true;
-      updateUserCaption("", "vcUserCaption");   // user caption fade out
-      $("#videoCallStatus").textContent = "ভাবছি…";
+    const rec = makeRecognizer("bn-BD", false);
+    if (!rec) return;
+    vcRecognizer = rec;
+    let heard = "", interim = "";
+
+    rec.onresult = (e) => {
+      heard = ""; interim = "";
+      for (let i = e.resultIndex; i < e.results.length; i++) {
+        const t = e.results[i][0].transcript;
+        if (e.results[i].isFinal) heard += t; else interim += t;
+      }
+      updateUserCaption(heard || interim, "vcUserCaption");
+      if ((heard || interim).trim() && (currentAudio || currentUtter)) _stopAll();
+    };
+
+    rec.onend = async () => {
+      if (!vcOn || _vcSeq !== seq) return;
+      const said = heard.trim();
+      updateUserCaption("", "vcUserCaption");
+
+      if (!said) {
+        setTimeout(() => { if (vcOn && _vcSeq === seq) videoCallLoop(); }, 300);
+        return;
+      }
+
+      if ($("#videoCallStatus")) $("#videoCallStatus").textContent = "ভাবছি…";
       const img = snapshot($("#videoCallVideo"), $("#videoCallCanvas"));
       try {
         const r = await fetch(api("/analyze"), {
@@ -1149,50 +1219,31 @@ PARISA MEMORY PORTAL এ আপনাকে স্বাগতম।
         });
         const data = await r.json();
         const reply = data.reply || "কিছু বুঝতে পারলাম না।";
-        if (!vcOn || _vcSeq !== mySeq) { aiReplying = false; return; }
-        updateCaption($("#videoCallCaption"), reply);
-        await speakAndWait(reply, $("#videoCallStatus"));
+        if (!vcOn || _vcSeq !== seq) return;
+        await speakAndWait(reply, $("#videoCallCaption"), $("#videoCallStatus"));
       } catch {
-        updateCaption($("#videoCallCaption"), "নেটওয়ার্ক সমস্যা");
+        if ($("#videoCallCaption")) {
+          $("#videoCallCaption").textContent = "নেটওয়ার্ক সমস্যা";
+          setTimeout(() => { if ($("#videoCallCaption")) $("#videoCallCaption").textContent = ""; }, 3000);
+        }
       }
-      // recognizer আগে বন্ধ করো — race condition fix (same as audio call)
-      try { if (vcRecognizer) vcRecognizer.stop(); } catch {}
-      aiReplying = false;
-      if (!vcOn || _vcSeq !== mySeq) return;
-      $("#videoCallStatus").textContent = "কানেক্টেড";
-      setTimeout(() => { if (vcOn && _vcSeq === mySeq) updateCaption($("#videoCallCaption"), ""); }, 2500);
-      setTimeout(() => { if (vcOn && _vcSeq === mySeq) videoCallLoop(); }, 350);
+
+      if (!vcOn || _vcSeq !== seq) return;
+      if ($("#videoCallStatus")) $("#videoCallStatus").textContent = "কানেক্টেড";
+      setTimeout(() => { if (vcOn && _vcSeq === seq) videoCallLoop(); }, 350);
     };
 
-    vcRecognizer.onstart = () => {
-      if (currentAudio || currentUtter) { _stopAll(); aiReplying = false; }
-      $("#videoCallStatus").textContent = "কানেক্টেড";
-    };
-    vcRecognizer.onresult = (e) => {
-      let interim = "";
-      for (let i = e.resultIndex; i < e.results.length; i++) {
-        const t = e.results[i][0].transcript;
-        if (e.results[i].isFinal) buffer += t; else interim += t;
+    rec.onerror = (e) => {
+      if (!vcOn || _vcSeq !== seq) return;
+      if (e.error === "no-speech") {
+        setTimeout(() => { if (vcOn && _vcSeq === seq) videoCallLoop(); }, 300);
+      } else if (e.error !== "aborted") {
+        setTimeout(() => { if (vcOn && _vcSeq === seq) videoCallLoop(); }, 800);
       }
-      // Barge-in: stop AI audio, clear AI caption
-      if (interim.trim() && (currentAudio || currentUtter)) {
-        _stopAll(); aiReplying = false;
-        updateCaption($("#videoCallCaption"), "");
-        $("#videoCallStatus").textContent = "কানেক্টেড";
-      }
-      // Show user speech in top caption (smaller, italic)
-      updateUserCaption(buffer + interim, "vcUserCaption");
-      if (silenceTimer) clearTimeout(silenceTimer);
-      if (buffer.trim() || interim.trim()) silenceTimer = setTimeout(handleSend, 1500);
     };
-    vcRecognizer.onerror = (e) => {
-      if (e.error === "aborted") return;
-      if (vcOn && _vcSeq === mySeq && !aiReplying) setTimeout(videoCallLoop, 600);
-    };
-    vcRecognizer.onend = () => {
-      if (vcOn && _vcSeq === mySeq && !aiReplying) setTimeout(videoCallLoop, 200);
-    };
-    try { vcRecognizer.start(); } catch { if (vcOn) setTimeout(videoCallLoop, 500); }
+
+    try { rec.start(); }
+    catch { setTimeout(() => { if (vcOn && _vcSeq === seq) videoCallLoop(); }, 600); }
   }
 
   // ── Welcome message (one-time) ────────────────────────────────────

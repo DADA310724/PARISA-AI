@@ -227,7 +227,7 @@ textarea, input, select { font-family: inherit; color: inherit; }
 }
 .new-chat .ic { width: 16px; height: 16px; }
 .side-section-title { font-size: 11px; opacity: .6; margin: 14px 4px 6px; letter-spacing: 1px; text-transform: uppercase; color: #8fd9e6; }
-.chat-list { display: flex; flex-direction: column; gap: 6px; overflow-y: auto; max-height: 26vh; }
+.chat-list { display: flex; flex-direction: column; gap: 6px; overflow-y: auto; max-height: 42vh; }
 .chat-item {
   display: flex; align-items: center; gap: 6px;
   padding: 9px 10px; border-radius: 10px;
@@ -1074,58 +1074,53 @@ textarea, input, select { font-family: inherit; color: inherit; }
   border: 1px solid rgba(95,232,255,.12);
 }
 
-/* ══ Investigative 5-column table — NotebookLM style ═══════════════ */
+/* ══ Investigative 5-column table — compact, mobile-friendly ═══════ */
 .msg table {
-  width: 100%; min-width: 520px;
+  width: 100%; min-width: 0;
   border-collapse: collapse;
-  font-size: 11.5px; margin: 0;
+  font-size: 11px; margin: 0;
   background: rgba(0,15,22,.6);
 }
 .msg .tbl-wrap table { border: none; border-radius: 0; }
-.msg table thead tr {
-  background: rgba(0,100,80,.28);
-}
+.msg table thead tr { background: rgba(0,100,80,.28); }
 .msg table th {
-  padding: 7px 8px;
+  padding: 5px 7px;
   color: #6ff0ff; font-weight: 700;
-  text-align: left; font-size: 10.5px;
-  letter-spacing: .04em; text-transform: uppercase;
+  text-align: left; font-size: 10px;
+  letter-spacing: .03em; text-transform: uppercase;
   border-bottom: 1px solid rgba(95,232,255,.18);
   white-space: nowrap;
 }
 .msg table td {
-  padding: 6px 8px;
+  padding: 5px 7px;
   border-bottom: 1px solid rgba(255,255,255,.04);
   color: #d0eff8; vertical-align: top;
-  line-height: 1.45; word-break: break-word;
+  line-height: 1.4; word-break: break-word;
+  font-size: 11px;
 }
 /* তারিখ কলাম */
 .msg table td:nth-child(1) {
-  white-space: nowrap; font-size: 10.5px;
-  color: rgba(180,240,250,.70); min-width: 90px;
+  white-space: nowrap; font-size: 10px;
+  color: rgba(180,240,250,.70); min-width: 75px; max-width: 90px;
 }
 /* প্ল্যাটফর্ম কলাম */
 .msg table td:nth-child(2) {
-  font-weight: 600; font-size: 10.5px;
-  min-width: 60px; white-space: nowrap;
+  font-weight: 600; font-size: 10px;
+  min-width: 50px; max-width: 65px; white-space: nowrap;
 }
 /* প্রেরক কলাম */
 .msg table td:nth-child(3) {
-  color: #00e5b4; font-weight: 600; min-width: 65px; white-space: nowrap;
+  color: #00e5b4; font-weight: 600;
+  min-width: 45px; max-width: 60px; white-space: nowrap;
 }
 /* মেসেজ কলাম */
 .msg table td:nth-child(4) {
   color: #e8f8ff; font-style: italic;
-  min-width: 120px; max-width: 220px;
-}
-/* ফাইল নাম কলাম */
-.msg table td:nth-child(5) {
-  font-size: 10px; color: rgba(180,240,250,.55);
-  white-space: nowrap; min-width: 60px;
+  min-width: 100px; max-width: 180px;
 }
 /* বিশ্লেষণ কলাম */
-.msg table td:nth-child(6) {
-  color: #c8e8f4; font-size: 11px; min-width: 120px;
+.msg table td:nth-child(5) {
+  color: #c8e8f4; font-size: 10.5px; min-width: 90px; max-width: 160px;
 }
 .msg table tr:hover td { background: rgba(95,232,255,.04); }
 .msg table tr:last-child td { border-bottom: none; }
