@@ -343,12 +343,14 @@ textarea, input, select { font-family: inherit; color: inherit; }
 .msg-row.assistant { justify-content: flex-start; }
 
 .msg {
-  padding: 11px 13px; border-radius: 16px;
-  line-height: 1.65; word-wrap: break-word; word-break: break-word;
-  position: relative; font-size: 14.5px; text-align: left;
+  max-width: 92%; padding: 11px 13px; border-radius: 16px;
+  line-height: 1.6; word-wrap: break-word; word-break: break-word;
+  position: relative; font-size: 15px; text-align: left;
   backdrop-filter: blur(18px) saturate(140%);
-  overflow: hidden; /* কখনো container ছেড়ে যাবে না */
+  overflow: hidden;
 }
+.msg.assistant { width: 92%; }
+.msg.user { max-width: 80%; }
 .msg.user {
   max-width: 75%;
   background: linear-gradient(135deg, rgba(95, 232, 255, .14), rgba(0, 212, 212, .12));
@@ -427,7 +429,6 @@ textarea, input, select { font-family: inherit; color: inherit; }
 }
 .attached-bar .chip button { background: none; border: none; color: #b4f0fa; cursor: pointer; font-size: 15px; padding: 0 0 0 4px; }
 
-/* duplicate table block removed — see investigative table section below */
 
 /* বাস্তব চ্যাট বাবল (পারিসা/রুবেল সরাসরি রেন্ডার) */
 .chat-log { display: flex; flex-direction: column; gap: 4px; margin: 8px 0; }

@@ -158,25 +158,10 @@ PARISA MEMORY PORTAL এ আপনাকে স্বাগতম।
       const rowText = tr.textContent || "";
       if (/জাদু|ব্ল্যাক\s*ম্যাজিক|black\s*magic|তান্ত্রিক|কবিরাজ|হুজুর/i.test(rowText)) tr.classList.add("blackmagic-row");
 
-      // Phase badge — inject into analysis column (last td)
+      // Phase labels: remove [Phase X] text from analysis column — colors shown via row CSS only
       const lastCell = cells[cells.length - 1];
       if (lastCell) {
-        const cellText = lastCell.textContent || "";
-        let phaseBadge = "";
-        if (/\[Phase A\]/i.test(cellText) || tr.classList.contains("phase-a-row")) {
-          phaseBadge = '<span class="phase-badge phase-a">Phase A</span>';
-        } else if (/\[Phase B\]/i.test(cellText) || tr.classList.contains("phase-b-row")) {
-          phaseBadge = '<span class="phase-badge phase-b">Phase B</span>';
-        } else if (/\[Phase C\]/i.test(cellText)) {
-          phaseBadge = '<span class="phase-badge phase-c">Phase C</span>';
-        } else if (/\[Phase D\]/i.test(cellText) || tr.classList.contains("phase-d-row")) {
-          phaseBadge = '<span class="phase-badge phase-d">Phase D</span>';
-        }
-        if (phaseBadge) {
-          // Remove [Phase X] text, inject badge
-          lastCell.innerHTML = lastCell.innerHTML.replace(/\[Phase [A-D]\]/gi, "").trim();
-          lastCell.innerHTML = phaseBadge + " " + lastCell.innerHTML;
-        }
+        lastCell.innerHTML = lastCell.innerHTML.replace(/\[Phase [A-D]\]/gi, "").trim();
       }
     });
     // Remove numeric ref-num badges [1], [2] etc — user doesn't want reference numbers
@@ -1150,7 +1135,7 @@ PARISA MEMORY PORTAL এ আপনাকে স্বাগতম।
         body: JSON.stringify({ prompt: "এই ছবিতে কী দেখা যাচ্ছে? বাংলায় বলো।", file: img, mime: "image/jpeg", userName: settings.userName }),
       }).then(r => r.json()).then(d => {
         updateCaption($("#videoCallCaption"), d.reply || "কিছু বুঝলাম না।");
-        speakAndWait(d.reply || "", $("#videoCallStatus"));
+        speakAndWait(d.reply || "", $("#videoCallCaption"), $("#videoCallStatus"));
       }).catch(() => { $("#videoCallStatus").textContent = oldStatus; });
       return;
     }
@@ -1167,8 +1152,7 @@ PARISA MEMORY PORTAL এ আপনাকে স্বাগতম।
         method: "POST", headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ prompt: q, file: img, mime: "image/jpeg", userName: settings.userName }),
       }).then(r => r.json()).then(d => {
-        updateCaption($("#videoCallCaption"), d.reply || "কিছু বুঝলাম না।");
-        speakAndWait(d.reply || "", $("#videoCallStatus"));
+        speakAndWait(d.reply || "", $("#videoCallCaption"), $("#videoCallStatus"));
       }).catch(() => { $("#videoCallStatus").textContent = "কানেক্টেড"; });
     };
     r.onerror = () => { $("#videoCallStatus").textContent = "কানেক্টেড"; };
