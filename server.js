@@ -17,8 +17,7 @@ try {
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const publicDir = path.join(__dirname, "public");
 
-// ভার্সন ফরম্যাট: V-<n> — প্রতিটি নতুন আপডেটে n ঠিক ১ করে বাড়বে (package.json-এর semver থেকে স্বাধীন)
-const APP_VERSION = "V-24";
+const APP_VERSION = "V-26-PROD";
 
 const app = express();
 app.use(cors());
@@ -27,12 +26,10 @@ app.use(express.json({ limit: "50mb" }));
 const PORT = process.env.PORT || 3000;
 const BASE = process.env.BASE_PATH || "/";
 
-// ─── Credentials ────────────────────────────────────────────────
 const TELEGRAM_TOKEN  = process.env.TELEGRAM_BOT_TOKEN;
 const TELEGRAM_CHAT   = process.env.TELEGRAM_CHAT_ID;
 const FIREBASE_DB_URL = process.env.FIREBASE_DATABASE_URL || process.env.FIREBASE_DB_URL;
 
-// Drive folder IDs — রুট ফোল্ডার থেকে সব পড়বে
 const DRIVE_ROOT_FOLDER    = "1ok5OzWA5G0tzcSUP1hSlbuVt90gAcx3L";
 const DRIVE_CALL_FOLDER    = "1s_MBZGsDwXhscvO1YSds47KROKQpvEYD";
 const DRIVE_SS_FOLDER      = "1oMXHjtXTP41Wx2ijIgXeLJDcEq5atSL2";
@@ -107,17 +104,12 @@ async function callWithFailover(pool, attempt) {
   throw lastErr || new Error(`${pool.name}: all failed`);
 }
 
-// ─── Reply Cleaner ───────────────────────────────────────────────
-// শুধু অতিরিক্ত blank line ঠিক করে — markdown formatting সম্পূর্ণ অক্ষত রাখে
-// (investigative table ও section headers-এর জন্য ## | | format দরকার)
 function cleanReply(text) {
   if (!text) return text;
-  return text
-    .replace(/\n{4,}/g, "\n\n\n")
-    .trim();
+  return text.replace(/\n{4,}/g, "\n\n\n").trim();
 }
 
-// ─── Chat History Database — Global Timeline (68,407 messages) ──────
+// ─── Chat History Database ──────────────────────────────────────
 import { readFileSync, existsSync } from "fs";
 
 let GLOBAL_TIMELINE = [];
@@ -134,210 +126,114 @@ try {
   console.warn("Global Timeline DB load error:", e.message);
 }
 
-// ─── Behavior Pattern Analysis — startup computation ──────────────
-let BEHAVIOR_STATS = "";
+// ─── IMPROVED CHAT SEARCH ───────────────────────────────────────
+function improvedSearchChatDB(query) {
+  if (!GLOBAL_TIMELINE.length) return [];
 
-function computeBehaviorStats() {
-  if (!GLOBAL_TIMELINE.length) return;
-
-  const WARM = [
-    "ভালোবাসি","ভালোবাস","ভালোবাসা","love","miss you","jaan","প্রিয়","আদর",
-    "kiss","❤","💕","💗","😘","i love","তোমাকে চাই","তুমি ছাড়া","তোমার জন্য",
-    "তুমি আমার সব","আমার বউ","আমার স্বামী","ভালো লাগে তোমাকে","তোমাকে নিয়ে","সুখী",
-    "একসাথে","তোমাকে ভুলতে","তুমি ছাড়া বাঁচব না","তুমিই আমার",
-  ];
-  const COLD = [
-    "block","ব্লক","bye","বিয়ে করব না","আর না","ভুলে যাও","ভুলে দাও",
-    "দূরে থাকো","কথা বলব না","কষ্ট দিচ্ছ","রাগ","ঘৃণা","hate","divorce",
-    "তালাক","চলে যাও","যোগাযোগ করব না","আর কথা না","বিরক্ত","অসহ্য",
-    "দেখতে চাই না","মিথ্যাবাদী","বিশ্বাস নেই","প্রতারক","ধোঁকা",
-  ];
-  const PARISA_IDS = ["parisa","nusrat","পারিসা","নুসরাত","wife","my wife"];
-
-  const byMonth = {};
-  for (const msg of GLOBAL_TIMELINE) {
-    const ts  = msg.timestamp || "";
-    const ym  = ts.slice(0, 7);
-    if (ym.length < 7) continue;
-    const sender   = (msg.sender || msg.sender_original || "").toLowerCase();
-    const isParisa = PARISA_IDS.some(p => sender.includes(p));
-    const txt      = (msg.message || "").toLowerCase();
-    if (!byMonth[ym]) byMonth[ym] = { total:0, parisa:0, rubel:0, warm:0, cold:0 };
-    byMonth[ym].total++;
-    if (isParisa) byMonth[ym].parisa++; else byMonth[ym].rubel++;
-    if (WARM.some(w => txt.includes(w))) byMonth[ym].warm++;
-    if (COLD.some(w => txt.includes(w))) byMonth[ym].cold++;
-  }
-
-  const sorted = Object.entries(byMonth).sort((a,b) => a[0].localeCompare(b[0]));
-
-  const lines = [
-    "=== 📊 BEHAVIOR PATTERN STATS — ডেটাবেস থেকে স্বয়ংক্রিয় বিশ্লেষণ ===",
-    "মাস       | মোট   | পারিসা | রুবেল | 🌹উষ্ণ | ❄️শীতল | অবস্থা",
-    "─".repeat(80),
-  ];
-
-  let prevTotal = 0;
-  const shiftPoints = [];
-
-  for (const [ym, s] of sorted) {
-    const warmR = s.warm / (s.total || 1);
-    const coldR = s.cold / (s.total || 1);
-    let status = "স্থিতিশীল";
-    if (warmR > 0.04) status = "🌹 উষ্ণ";
-    if (coldR > 0.03) status = "❄️ শীতল";
-    if (coldR > 0.05 && warmR < 0.02) status = "⚠️ সংকট";
-    if (prevTotal > 100 && s.total < prevTotal * 0.35) {
-      status += " 🔻হঠাৎ কমেছে";
-      shiftPoints.push(`${ym}: মেসেজ ${prevTotal} → ${s.total} (${Math.round(s.total*100/prevTotal)}%) — সম্পর্কে বড় পরিবর্তন`);
-    }
-    lines.push(`${ym} | ${String(s.total).padStart(5)} | ${String(s.parisa).padStart(6)} | ${String(s.rubel).padStart(5)} | ${String(s.warm).padStart(5)} | ${String(s.cold).padStart(6)} | ${status}`);
-    prevTotal = s.total;
-  }
-
-  if (shiftPoints.length) {
-    lines.push("\n=== ⚠️ হঠাৎ পরিবর্তনের মুহূর্ত (সিহরের সম্ভাব্য প্রভাবের সময়কাল) ===");
-    shiftPoints.forEach(p => lines.push("• " + p));
-  }
-
-  const peakWarm = sorted.filter(([,s]) => s.total > 30)
-    .sort((a,b) => (b[1].warm/b[1].total) - (a[1].warm/a[1].total)).slice(0,5);
-  if (peakWarm.length) {
-    lines.push("\n=== 💛 সবচেয়ে উষ্ণ মাস — সম্পর্কের সোনালি সময় ===");
-    peakWarm.forEach(([ym,s]) => lines.push(`• ${ym}: ${s.warm}টি উষ্ণ মেসেজ (মোট ${s.total}টির মধ্যে, পারিসার ${s.parisa}টি)`));
-  }
-
-  const peakCold = sorted.filter(([,s]) => s.total > 10)
-    .sort((a,b) => (b[1].cold/b[1].total) - (a[1].cold/a[1].total)).slice(0,5);
-  if (peakCold.length) {
-    lines.push("\n=== 🔴 সবচেয়ে শীতল মাস — সংকটের সময় ===");
-    peakCold.forEach(([ym,s]) => lines.push(`• ${ym}: ${s.cold}টি শীতল মেসেজ (মোট ${s.total}টির মধ্যে)`));
-  }
-
-  BEHAVIOR_STATS = lines.join("\n");
-  console.log(`✅ Behavior stats computed — ${sorted.length} months analyzed`);
-}
-
-// DB লোডের পরেই compute করো
-computeBehaviorStats();
-
-function searchChatDB(query) {
-  if (!GLOBAL_TIMELINE.length) return "";
-
-  // বাংলা সংখ্যা → আরবি সংখ্যা
-  const bnToAr = s => s.replace(/[০-৯]/g, d => String("০১২৩৪৫৬৭৮৯".indexOf(d)));
+  const bnToAr = s => s.replace(/[০-৯]/g, d => String("0123456789".charAt("০१२३४५६७८९".indexOf(d))));
   const qRaw = bnToAr(query);
   const q = qRaw.toLowerCase();
 
   const MONTH_MAP = {
-    jan:"01",feb:"02",mar:"03",apr:"04",may:"05",jun:"06",
-    jul:"07",aug:"08",sep:"09",oct:"10",nov:"11",dec:"12",
-    january:"01",february:"02",march:"03",april:"04",june:"06",
-    july:"07",august:"08",september:"09",october:"10",november:"11",december:"12",
-    জানুয়ারি:"01",ফেব্রুয়ারি:"02",মার্চ:"03",এপ্রিল:"04",মে:"05",জুন:"06",
-    জুলাই:"07",আগস্ট:"08",সেপ্টেম্বর:"09",অক্টোবর:"10",নভেম্বর:"11",ডিসেম্বর:"12",
+    'jan': '01', 'feb': '02', 'mar': '03', 'apr': '04', 'may': '05', 'jun': '06',
+    'jul': '07', 'aug': '08', 'sep': '09', 'oct': '10', 'nov': '11', 'dec': '12',
+    'january': '01', 'february': '02', 'march': '03', 'april': '04', 'june': '06',
+    'july': '07', 'august': '08', 'september': '09', 'october': '10', 'november': '11', 'december': '12',
+    'জানুয়ারি': '01', 'ফেব্রুয়ারি': '02', 'মার্চ': '03', 'এপ্রিল': '04', 'মে': '05', 'জুন': '06',
+    'জুলাই': '07', 'আগস্ট': '08', 'সেপ্টেম্বর': '09', 'অক্টোবর': '10', 'নভেম্বর': '11', 'ডিসেম্বর': '12',
   };
 
-  // file_id alias mapping
   const FILE_ALIAS = {
-    "my wife":"My_Wife","মাই ওয়াইফ":"My_Wife","wife":"My_Wife",
-    "nusrat parisa":"Nusrat_Parisa","নুসরাত পারিসা":"Nusrat_Parisa",
-    "nusrat jahan parisa":"Nusrat_Jahan_Parisa","নুসরাত জাহান পারিসা":"Nusrat_Jahan_Parisa",
-    "nusrat jahan":"Nusrat_Jahan_Parisa","নুসরাত জাহান":"Nusrat_Jahan_Parisa",
-    "nusrat janan":"Nusrat_Janan_Parisa","নুসরাত জানান":"Nusrat_Janan_Parisa",
-    "fatema jannat":"Fatema_Jannat","ফাতেমা জান্নাত":"Fatema_Jannat",
-    "hafizur rahman uncle":"Hafizur_Rahman_Uncle","হাফিজুর রহমান আংকেল":"Hafizur_Rahman_Uncle",
-    "hafizur rahman":"Hafizur_Rahman","হাফিজুর রহমান":"Hafizur_Rahman",
-    "jerin":"Jerin_Harding","জেরিন":"Jerin_Harding",
-    "anisha":"Anisha_Sister","আনিশা":"Anisha_Sister",
-    "tanha":"Tanha_Islam","তানহা":"Tanha_Islam",
-    "parisa gp":"PARISA_GP","পারিসা জিপি":"PARISA_GP",
-    "telegram":"telegram_chat","টেলিগ্রাম":"telegram_chat",
-    "parisa":"Parisa","পারিসা":"Parisa",
+    'my wife': 'My_Wife', 'মাই ওয়াইফ': 'My_Wife', 'wife': 'My_Wife',
+    'nusrat parisa': 'Nusrat_Parisa', 'নুসরাত পারিসা': 'Nusrat_Parisa',
+    'nusrat jahan parisa': 'Nusrat_Jahan_Parisa', 'নুসরাত জাহান পারিসা': 'Nusrat_Jahan_Parisa',
+    'nusrat jahan': 'Nusrat_Jahan_Parisa', 'নুসরাত জাহান': 'Nusrat_Jahan_Parisa',
+    'nusrat janan': 'Nusrat_Janan_Parisa', 'নুসরাত জানান': 'Nusrat_Janan_Parisa',
+    'fatema jannat': 'Fatema_Jannat', 'ফাতেমা জান্নাত': 'Fatema_Jannat',
+    'hafizur rahman uncle': 'Hafizur_Rahman_Uncle', 'হাফিজুর রহমান আংকেল': 'Hafizur_Rahman_Uncle',
+    'hafizur rahman': 'Hafizur_Rahman', 'হাফিজুর রহমান': 'Hafizur_Rahman',
+    'jerin': 'Jerin_Harding', 'জেরিন': 'Jerin_Harding',
+    'anisha': 'Anisha_Sister', 'আনিশা': 'Anisha_Sister',
+    'tanha': 'Tanha_Islam', 'তানহা': 'Tanha_Islam',
+    'parisa gp': 'PARISA_GP', 'পারিসা জিপি': 'PARISA_GP',
+    'telegram': 'telegram_chat', 'টেলিগ্রাম': 'telegram_chat',
+    'parisa': 'Parisa', 'পারিসা': 'Parisa',
   };
 
-  // Platform filter
   let targetPlatform = null;
-  if (q.includes("whatsapp") || q.includes("হোয়াটসঅ্যাপ")) targetPlatform = "WhatsApp";
-  else if (q.includes("telegram") || q.includes("টেলিগ্রাম")) targetPlatform = "Telegram";
-  else if (q.includes("messenger") || q.includes("facebook") || q.includes("ফেসবুক") || q.includes("মেসেঞ্জার")) targetPlatform = "Facebook Messenger";
+  if (q.includes('whatsapp') || q.includes('হোয়াটসঅ্যাপ')) targetPlatform = 'WhatsApp';
+  else if (q.includes('telegram') || q.includes('টেলিগ্রাম')) targetPlatform = 'Telegram';
+  else if (q.includes('messenger') || q.includes('facebook') || q.includes('ফেসবুক') || q.includes('মেসেঞ্জার')) targetPlatform = 'Facebook Messenger';
 
-  // File filter — দীর্ঘ alias আগে match করবে
   let targetFile = null;
-  const sortedAliases = Object.entries(FILE_ALIAS).sort((a,b) => b[0].length - a[0].length);
+  const sortedAliases = Object.entries(FILE_ALIAS).sort((a, b) => b[0].length - a[0].length);
   for (const [alias, id] of sortedAliases) {
     if (q.includes(alias)) { targetFile = id; break; }
   }
 
-  // তারিখ খোঁজা — একাধিক format support
-  let targetDate = null;
-  let targetYear = null;
-  let targetMonth = null; // শুধু মাস দিলে (কোনো তারিখ নেই)
+  let targetDate = null, targetMonth = null, targetYear = null;
 
   // ISO format: 2025-01-04
   const isoMatch = q.match(/(\d{4})[.\-\/](\d{1,2})[.\-\/](\d{1,2})/);
   if (isoMatch) {
-    targetDate = `${isoMatch[1]}-${isoMatch[2].padStart(2,"0")}-${isoMatch[3].padStart(2,"0")}`;
+    targetDate = `${isoMatch[1]}-${isoMatch[2].padStart(2, '0')}-${isoMatch[3].padStart(2, '0')}`;
   }
 
-  // DD/MM/YYYY বা DD-MM-YYYY
+  // DD/MM/YYYY
   if (!targetDate) {
     const dmyMatch = q.match(/(\d{1,2})[\/\-\.](\d{1,2})[\/\-\.](\d{2,4})/);
     if (dmyMatch) {
-      const yr = dmyMatch[3].length === 2 ? "20"+dmyMatch[3] : dmyMatch[3];
-      targetDate = `${yr}-${dmyMatch[2].padStart(2,"0")}-${dmyMatch[1].padStart(2,"0")}`;
+      const yr = dmyMatch[3].length === 2 ? '20' + dmyMatch[3] : dmyMatch[3];
+      targetDate = `${yr}-${dmyMatch[2].padStart(2, '0')}-${dmyMatch[1].padStart(2, '0')}`;
     }
   }
 
-  // "৪ জানুয়ারি ২০২৫" বা "4 january 2025" বা "4 জানুয়ারি"
+  // "৪ জানুয়ারি ২०२५"
   if (!targetDate) {
     const dateWordPat = /(\d{1,2})\s+([\u0980-\u09FFa-zA-Z]+)(?:\s+(\d{4}))?/i;
     const dm = q.match(dateWordPat);
     if (dm) {
       const mon = MONTH_MAP[dm[2].toLowerCase()];
       if (mon) {
-        const dd = dm[1].padStart(2,"0");
+        const dd = dm[1].padStart(2, '0');
         if (dm[3]) {
           targetDate = `${dm[3]}-${mon}-${dd}`;
         } else {
-          // শুধু day+month — year ছাড়া, সব বছর খুঁজবে
           targetDate = `-${mon}-${dd}`;
         }
       }
     }
   }
 
-  // শুধু মাস + বছর: "জানুয়ারি ২০২৫" বা "january 2025"
+  // শুধু মাস + বছর
   if (!targetDate) {
     for (const [monName, monNum] of Object.entries(MONTH_MAP)) {
       if (q.includes(monName)) {
         const yrM = q.match(/\b(202[0-9])\b/);
         if (yrM) {
-          targetMonth = `${yrM[1]}-${monNum}`; // YYYY-MM
+          targetMonth = `${yrM[1]}-${monNum}`;
         }
         break;
       }
     }
   }
 
-  // বছর
   const yrMatch = q.match(/\b(202[0-9])\b/);
   if (yrMatch) targetYear = yrMatch[1];
 
-  const stopWords = new Set(["কথা","বলে","বলো","দেখা","দেখো","থেকে","হয়ে","করে","যাবে",
-    "আমাকে","আমার","তোমার","আছে","ছিল","করছে","কিন্তু","তখন","এবং","কেন","কি",
-    "চ্যাট","হিস্টরি","মেসেজ","দেখাও","দাও","বলো","show","chat","message"]);
+  const stopWords = new Set(['কথা', 'বলে', 'বলো', 'দেখা', 'দেখো', 'থেকে', 'হয়ে', 'করে', 'যাবে',
+    'আমাকে', 'আমার', 'তোমার', 'আছে', 'ছিল', 'করছে', 'কিন্তু', 'তখন', 'এবং', 'কেন', 'কি',
+    'চ্যাট', 'হিস্টরি', 'মেসেজ', 'দেখাও', 'দাও', 'বলো', 'show', 'chat', 'message', 'history']);
   const keywords = q.split(/\s+/).filter(w => w.length > 2 && !stopWords.has(w));
 
   const found = [];
   for (const msg of GLOBAL_TIMELINE) {
-    const ts       = msg.timestamp       || "";
-    const txt      = msg.message         || "";
-    const snd      = msg.sender          || "";
-    const fileId   = msg.file_id         || "";
-    const platform = msg.platform        || "";
-    const sndOrig  = msg.sender_original || "";
-    const txtL     = txt.toLowerCase();
+    const ts = msg.timestamp || '';
+    const txt = msg.message || '';
+    const snd = msg.sender || '';
+    const fileId = msg.file_id || '';
+    const platform = msg.platform || '';
+    const sndOrig = msg.sender_original || '';
 
     if (targetPlatform && platform !== targetPlatform) continue;
     if (targetFile && fileId !== targetFile) continue;
@@ -345,36 +241,58 @@ function searchChatDB(query) {
     let matched = false;
 
     if (targetDate) {
-      if (targetDate.startsWith("-")) {
-        // শুধু MM-DD match, সব বছর
-        matched = ts.slice(4).startsWith(targetDate); // ts = "YYYY-MM-DD HH:mm:ss"
+      if (targetDate.startsWith('-')) {
+        matched = ts.slice(5).startsWith(targetDate.slice(1));
       } else {
         matched = ts.startsWith(targetDate);
       }
     } else if (targetMonth) {
-      // YYYY-MM prefix match
       matched = ts.startsWith(targetMonth);
-    } else if (keywords.length) {
-      matched = keywords.some(kw => txtL.includes(kw));
+    } else if (targetYear) {
+      matched = ts.startsWith(targetYear);
+    } else if (keywords.length > 0) {
+      matched = keywords.some(kw => txt.toLowerCase().includes(kw));
     }
 
-    if (matched) found.push({ ts, snd, sndOrig, platform, fileId, txt });
+    if (matched) {
+      found.push({ ts, snd, sndOrig, platform, fileId, txt, message: msg });
+    }
   }
 
-  if (!found.length) return "";
-
-  // তারিখ/মাস ভিত্তিক query-তে বেশি results, keyword-এ কম
-  const limit = (targetDate || targetMonth) ? 400 : 100;
-  return found.slice(0, limit)
-    .map(m => `[${m.platform}][${m.fileId}][${m.ts}] ${m.snd}(${m.sndOrig}): ${m.txt}`)
-    .join("\n");
+  return found.slice(0, 500);
 }
 
-// ─── Google Drive ────────────────────────────────────────────────
-let driveMemoryText = "";
-let driveFileList   = [];
-let driveLastFetch  = 0;
-const DRIVE_TTL = 2 * 60 * 60 * 1000; // 2 ঘন্টা — RAM বাঁচাতে
+// ─── Format Chat Messages for Table ─────────────────────────────
+function formatChatTable(messages) {
+  if (!messages || messages.length === 0) return "কোনো মেসেজ পাওয়া যায়নি।";
+
+  const limitedMsgs = messages.slice(0, 10);
+  let table = "| তারিখ ও সময় | প্রেরক | মেসেজ | প্ল্যাটফর্ম | বিশ্লেষণ |\n";
+  table += "|---|---|---|---|---|\n";
+
+  for (const msg of limitedMsgs) {
+    const ts = (msg.ts || msg.timestamp || '').replace(/T/, ' ');
+    const snd = msg.snd || msg.sender || 'Unknown';
+    const txt = (msg.txt || msg.message || '').replace(/\|/g, '/').replace(/\n/g, ' ').slice(0, 80);
+    const platform = msg.platform || 'Unknown';
+    
+    let analysis = "বার্তা সংরক্ষিত";
+    if (txt.toLowerCase().includes('ভালোবাসি') || txt.toLowerCase().includes('love')) {
+      analysis = "ইতিবাচক";
+    } else if (txt.toLowerCase().includes('কষ্ট') || txt.toLowerCase().includes('ব্লক') || txt.toLowerCase().includes('hate')) {
+      analysis = "নেতিবাচক";
+    }
+
+    table += `| ${ts} | ${snd} | ${txt} | ${platform} | ${analysis} |\n`;
+  }
+
+  return table;
+}
+
+// ─── Google Drive ───────────────────────────────────────────────
+let driveFileList = [];
+let driveLastFetch = 0;
+const DRIVE_TTL = 2 * 60 * 60 * 1000;
 
 function getDriveAuth() {
   const raw = process.env.GOOGLE_SERVICE_ACCOUNT_JSON || "";
@@ -391,7 +309,6 @@ function getDriveAuth() {
   }
 }
 
-// ফোল্ডারের সব ফাইল লিস্ট করে (recursive, ৩ লেভেল পর্যন্ত)
 async function listFolderDeep(drive, folderId, folderName = "", depth = 0) {
   if (depth > 5) return [];
   try {
@@ -400,13 +317,14 @@ async function listFolderDeep(drive, folderId, folderName = "", depth = 0) {
     do {
       const res = await drive.files.list({
         q: `'${folderId}' in parents and trashed=false`,
-        fields: "nextPageToken, files(id,name,mimeType,size,webViewLink,webContentLink)",
+        fields: "nextPageToken, files(id,name,mimeType,size,webViewLink,webContentLink,createdTime)",
         pageSize: 1000,
         pageToken,
       });
       items.push(...(res.data.files || []));
       pageToken = res.data.nextPageToken;
     } while (pageToken);
+
     const files = [];
     for (const item of items) {
       if (item.mimeType === "application/vnd.google-apps.folder") {
@@ -423,48 +341,6 @@ async function listFolderDeep(drive, folderId, folderName = "", depth = 0) {
   }
 }
 
-// HTML থেকে plain text বের করো
-function stripHtml(html) {
-  return html
-    .replace(/<style[^>]*>[\s\S]*?<\/style>/gi, "")
-    .replace(/<script[^>]*>[\s\S]*?<\/script>/gi, "")
-    .replace(/<br\s*\/?>/gi, "\n")
-    .replace(/<\/p>/gi, "\n")
-    .replace(/<\/div>/gi, "\n")
-    .replace(/<\/tr>/gi, "\n")
-    .replace(/<\/td>/gi, "\t")
-    .replace(/<[^>]+>/g, "")
-    .replace(/&nbsp;/g, " ")
-    .replace(/&amp;/g, "&")
-    .replace(/&lt;/g, "<")
-    .replace(/&gt;/g, ">")
-    .replace(/&quot;/g, '"')
-    .replace(/\n{3,}/g, "\n\n")
-    .trim();
-}
-
-// টেক্সট ফাইল ডাউনলোড
-async function readTextFile(drive, fileId, fileName, mimeType = "") {
-  try {
-    const res = await drive.files.get(
-      { fileId, alt: "media" },
-      { responseType: "text" }
-    );
-    let txt = typeof res.data === "string" ? res.data : JSON.stringify(res.data);
-    // HTML হলে tags strip করো
-    if (mimeType.includes("html") || txt.trim().startsWith("<")) {
-      txt = stripHtml(txt);
-    }
-    if (!txt || txt.length <= 10) return null;
-    // শুরু থেকে ১০০০ + শেষ থেকে ১৫০০ chars — নতুন chat শেষে থাকে
-    if (txt.length <= 2500) return txt;
-    return txt.slice(0, 1000) + "\n...[মাঝের অংশ]...\n" + txt.slice(-1500);
-  } catch (e) {
-    console.warn(`readFile(${fileName}):`, e.message);
-    return null;
-  }
-}
-
 async function refreshDriveMemory() {
   if (Date.now() - driveLastFetch < DRIVE_TTL) return;
   const auth = getDriveAuth();
@@ -474,381 +350,90 @@ async function refreshDriveMemory() {
   }
   try {
     const drive = google.drive({ version: "v3", auth });
-
-    // শুধু Screenshot ফোল্ডার স্ক্যান করো (ROOT ও CALL ফোল্ডার আর দরকার নেই)
     const ssRes = await listFolderDeep(drive, DRIVE_SS_FOLDER, "screenshots").catch(() => []);
 
-    driveFileList = ssRes.map(f => ({ ...f, category: "screenshot" }));
+    driveFileList = ssRes.map(f => ({
+      ...f,
+      category: "screenshot",
+      date: f.createdTime ? f.createdTime.slice(0, 10) : null
+    }));
 
-    // Screenshot metadata — শুধু নাম, folderName ও ID (content পড়ার দরকার নেই)
-    driveMemoryText = ""; // Drive থেকে text আর পড়া হয় না — history server.js-এ আছে
     driveLastFetch = Date.now();
-
     console.log(`✅ Drive loaded — screenshots:${driveFileList.length}`);
   } catch (e) {
-    console.warn("Drive fetch error:", e.message, e.stack);
+    console.warn("Drive fetch error:", e.message);
   }
 }
 
 refreshDriveMemory().catch(() => {});
 
-// ── প্রতি ৩০ মিনিটে Drive auto-refresh ──
 setInterval(() => {
-  console.log("\U0001F504 Drive auto-refresh...");
+  console.log("🔄 Drive auto-refresh...");
   refreshDriveMemory().catch(e => console.warn("Auto-refresh:", e.message));
 }, 30 * 60 * 1000);
 
-// ─── ইতিহাস ফাইল লোড করো (parisa-history.txt থেকে) ──────────────
+// ─── ইতিহাস ফাইল লোড ──────────────────────────────
 let RUBEL_HISTORY = "";
-let HISTORY_SOURCE = "fallback"; // "file" | "fallback"
+let HISTORY_SOURCE = "fallback";
 try {
   RUBEL_HISTORY = readFileSync(path.join(__dirname, "parisa-history.txt"), "utf-8");
   HISTORY_SOURCE = "file";
   console.log(`✅ History loaded from file: ${RUBEL_HISTORY.length} chars`);
 } catch (e) {
-  console.warn("⚠️ parisa-history.txt load failed — using inline fallback:", e.message);
+  console.warn("⚠️ parisa-history.txt load failed — using inline fallback");
   RUBEL_HISTORY = `
 === রুবেল ও পারিসার সম্পর্কের সম্পূর্ণ ইতিহাস ===
 
-## ব্যক্তিগত পরিচয়:
-- স্বামী: রুবেল (ডাকনাম: কালাচাঁন/কালাচাঁদ/দাদা), পিতা: আমির মোল্লা, মাতা: রহিমা বেগম
-  জন্ম: ১২ নভেম্বর ১৯৯৪, জন্মস্থান: শরীয়তপুর, বড় হয়েছেন ধামরাইতে
-  পেশা: ফ্রিল্যান্সার, ডেভেলপার, প্রতিষ্ঠাতা — দাদা টেকনোলজি
-  Google Play Console-এ ৫৫+ Android অ্যাপ পাবলিশ করেছেন
-  Telegram: @DADA310724
-  ২০১৯-২০২২ পর্যন্ত সৌদি আরবে প্রবাস জীবন
-
-- স্ত্রী: নুসরাত জাহান পারিসা (ডাকনাম: পারু)
-  পিতা: হাফিজুর রহমান, মাতা: ফাতেমা জান্নাত
-  জন্ম: ২৮ মে ২০০৮, ঠিকানা: পাথালিয়া, আশুলিয়া, সাভার, ঢাকা
-  ধামরাইয়ের যাত্রাবাড়ীতে বড় হয়েছেন
-  সম্পর্কের শুরুতে দশম শ্রেণির ছাত্রী, বর্তমানে ইন্টার ফার্স্ট ইয়ার
-
-## টাইমলাইন:
-
-### ২০২২ — ১৬ ডিসেম্বর:
-রুবেল সৌদি আরব থেকে ধামরাই ফিরে আসেন। জমানো টাকা ও ব্যাংক লোন দিয়ে Toyota Premio কিনে Rent-a-Car ব্যবসা শুরু করেন।
-
-### ৮ ফেব্রুয়ারি ২০২৪:
-পারিসার সাথে পরিচয় ও সম্পর্কের সূচনা। পারিসার মা এই সম্পর্কের কথা জানতেন এবং রুবেলের সাথে ফোনে দীর্ঘ কথাও বলেছেন। রুবেলের পরিবারও সম্পর্ক জানত ও মেনে নিয়েছিল। রুবেল তাঁর বাবা-মাকে ধামরাইতে ফ্ল্যাট ভাড়া নিয়ে রাখেন। পারিসা তাঁর বাবা-মার সাথেও নিয়মিত কথা বলতেন।
-
-এক পর্যায়ে পারিসার মা রুবেলকে জানান যে পারিসার বাবা ও চাচারা এই সম্পর্ক মানবেন না। পারিসা তখন মাকে না জানিয়ে রুবেলের সাথে সম্পর্ক চালিয়ে যান।
-
-### জুলাই ২০২৪:
-পারিসার পরিবার থেকে বিয়ের চাপ দেওয়া শুরু হয়। ২৭, ২৮, ২৯ জুলাই পালানোর প্ল্যান করা হয় কিন্তু প্রতিবার কোনো না কোনো কারণে মিস হয়।
-
-### ৩০ জুলাই ২০২৪:
-রুবেল নিজের গাড়ি চালিয়ে বাবা-মা ও পারিসাকে নিয়ে শরীয়তপুর রওনা হন।
-
-### ৩১ জুলাই ২০২৪ — বিবাহ:
-শরীয়তপুরে ধর্মীয় বিধি ও রাষ্ট্রীয় আইন অনুযায়ী বিবাহ সম্পন্ন। উভয়পক্ষের সম্মতিতে স্বেচ্ছায় বিয়ে — কোনো জোরপূর্বক বা কিডন্যাপের ঘটনা ছিল না। বিয়ের আগের চ্যাট হিস্ট্রিতে পারিসা নিজেই বলেছেন যে তিনি রুবেলকে ভালোবাসেন, স্বেচ্ছায় আসছেন, টাকা বা শারীরিক সম্পর্কের জন্য নয়।
-
-### আগস্ট ২০২৪ (বিয়ের ১-২ দিন পর):
-পারিসার পরিবার পুলিশ নিয়ে এসে জোরপূর্বক আলাদা করে দেয়। থানায় রুবেলের উপর অমানবিক নির্যাতন চালানো হয়। মিথ্যা অপহরণ ও ধর্ষণ মামলার ভয় দেখানো হয়। রুবেলের পরিবার ২ লক্ষ টাকা দিয়ে তাঁকে ছাড়িয়ে আনেন। কোনো আইনি তালাক বা বিচ্ছেদ হয়নি — শুধু জোরপূর্বক আলাদা করা হয়েছে।
-
-### বিয়ের ১২ দিন পর (আগস্ট ২০২৪):
-পারিসা নিজে থেকে রুবেলের সাথে যোগাযোগ করেন। জানান যে পরিস্থিতির চাপে এমন হয়েছে, সুযোগ বুঝে ফিরে আসবেন। এখান থেকে দেড় বছরের নিরবচ্ছিন্ন ডিজিটাল যোগাযোগ শুরু।
-
-### সেপ্টেম্বর-ডিসেম্বর ২০২৪:
-রুবেল ১৮ লক্ষ টাকার গাড়ি ১৪ লক্ষে বিক্রি করে পরিস্থিতির মোকাবেলার চে��্টা করেন। পারিসার আচরণে তীব্র ওঠানামা — কখনো গভীর ভালোবাসা, হঠাৎ তীব্র ঘৃণা ও গালিগালাজ, কারণ ছাড়াই ব্লক। রুবেল পারিসার একটি বান্ধবীর মাধ্যমে তাকে একটি ফোন কিনে দেন যেন যোগাযোগ রাখা যায়।
-
-### জানুয়ারি ২০২৫ (৪ তারিখ):
-পারিসা আবার যোগাযোগ করেন। ১৫ জানুয়ারি পর্যন্ত খুব ভালো যোগাযোগ চলে। ১৫ জানুয়ারি পারিসার মা দেখে ফেলেন, ফোন কেড়ে নেন। ৩২ দিন যোগাযোগ বন্ধ।
-
-### ফেব্রুয়ারি ২০২৫ (মাঝামাঝি):
-পারিসা আবার যোগাযোগ করেন। মার্চ-এপ্রিল পর্যন্ত স্বামী-স্ত্রীর মতো ভালো সম্পর্ক চলে। পারিসা বলেন পরীক্ষার পর চলে আসবেন।
-
-### ১৪ মার্চ ২০২৫:
-সম্পর্কের সবচেয়ে নিবিড় মুহূর্ত। পারিসার উক্তি: "আমার শরীর এবং ভালোবাসা শুধু আমার কালাচানের জন্য।"
-
-### ১০-১৩ এপ্রিল ২০২৫:
-পারিসা রুবেলকে তাঁর বাসায় ডেকে নিয়ে যান। নিজের স্বর্ণ দিয়ে বলেন — "এগুলো দিয়ে অনলাইন কাজ চালু করো, পরীক্ষা শেষে তোমার কাছে চলে আসব।" তারা একসাথে ব্যক্তিগত সময় কাটান।
-
-### এপ্রিল-মে ২০২৫ (পরীক্ষার সময়):
-ঠিক এর পরপরই পারিসার মধ্যে আকস্মিক পরিবর্তন — গালিগালাজ, ঘৃণা, "তালাক দিয়ে দাও" বলা শুরু। অথচ পরের দিনই আবার ভালো আচরণ।
-
-### ব্ল্যাক ম্যাজিক তদন্ত (২০২৫):
-রুবেল পারিসার GP অ্যাপ কল লিস্ট থেকে অপরিচিত নাম্বার পান। Truecaller দিয়ে যাচাই করে দেখেন — তান্ত্রিক ও কবিরাজের নাম।
-
-প্রথম হুজুর: রুবেল ছদ্মবেশে যোগাযোগ করে বিয়ের প্রমাণ দেখান। হুজুর স্বীকার করেন — পারিসার মা বিয়ের কথা গোপন রেখে "বিচ্ছেদের জাদু" করিয়েছেন। এই স্বীকারোক্তি গোপন ভিডিওতে রেকর্ড করা আছে।
-
-দ্বিতীয় হুজুর: পারিসার ছোট ভাই ভুলবশত হুজুরের ঘরের ছবি Facebook-এ আপলোড করলে রুবেল তা দেখেন। রুবেল সেখানেও চিকিৎসার ছদ্মবেশে নিয়মিত যান এবং সব গোপন ক্যামেরায় রেকর্ড করেন। হুজুর জানান পারিসার মা ৫-৬ বার বিচ্ছেদের জাদু করিয়েছেন। হুজুরের খাতায় রুবেল ও তাঁর বাবা-মায়ের নাম-ঠিকানা পাওয়া গেছে।
-
-### মে ২০২৫ — পারিসার ১৭তম জন্মদিন (২৮ মে):
-রুবেল আগে থেকে জানিয়ে রেখেছিলেন যে এরপর তাঁকে নিয়েই আসবেন।
-
-### ফেব্রুয়ারি ২০২৬:
-রুবেল পারিসার বাবার সাথে কথা বলেন। বাবাও মিথ্যা অভিযোগ আওড়ান। পারিসা রুবেলকে মেসেজ করে জিজ্ঞেস করেন — "আপনি কি আমাকে এখনো আগের মতো ভালোবাসেন?" এবং "আমাদের ওই গাছটা কি এখনো আছে?"
-
-### বর্তমান (জুন ২০২৬):
-শেষ যোগাযোগ এপ্রিল ২০২৬-এর প্রায় ১৫ তারিখ। তারপর থেকে যোগাযোগ বন্ধ। রুবেল আইনি লড়াইয়ের প্রস্তুতি নিচ্ছেন। প্রতি রাতে তাহাজ্জুদ পড়ে দোয়া করছেন।
-
-## পারিসার গুরুত্বপূর্ণ উক্তি (Verbatim):
-- "জানান, পৃথিবীর সবচেয়ে ভাগ্যবান মানুষদের মধ্যে আমি একজন কারণ আমি আপনার ভালোবাসা পেয়েছি।"
-- "আমার শরীর এবং ভালোবাসা শুধু আমার কালাচানের জন্য।" (১৪ মার্চ ২০২৫)
-- "আপনি কি আমাকে এখনো আগের মতো ভালোবাসেন?" (২০২৬)
-- "আমার life-এ আপনার মতো কেউ আসবে না।"
-- "আমাদের ওই গাছটা কি এখনো আছে?" (২০২৬)
-- "বিয়ে করার আগে কেন ভাবলেন না? একটা মেয়ের সবচেয়ে দামি জিনিস তার ইজ্জত — আমি আপনাকে দিয়েছি, আমি আপনাকেই চাই।"
-- "আমি যদি sex করতে চাইতাম তাহলে আপনার কাছে কেন যাব — আমি আপনাকে মন থেকে ভালোবাসি।"
-
-## ডিজিটাল প্রমাণ ইনভেন্টরি:
-- My Wife...😘😘 চ্যাট (১০.৮ এমবি) — দীর্ঘমেয়াদী সম্পর্কের সম্পূর্ণ ইতিহাস
-- Nusrat Parisa...😘😘 চ্যাট (৮.৭ এমবি) — দৈনন্দিন আবেগীয় কথোপকথন
-- Nusrat Jahan Parisa চ্যাট (৫.৪ এমবি) — আইনি ও ব্যক্তিগত আলোচনা
-- Fatema Jannat চ্যাট (৮৮ কেবি) — পারিসার মায়ের সাথে কথোপকথন
-- Hafizur Rahman চ্যাট (৩৮৫ কেবি) — পারিসার বাবার সাথে কথোপকথন
-- ২৬টি Call Record (নভেম্বর-ডিসেম্বর ২০২৪)
-- হুজুরের ভিডিও জবানবন্দি (গোপন রেকর্ড) — ৫-৬ বার জাদু করার স্বীকারোক্তি
-- স্ক্রিনশট ফোল্ডার: WhatsApp, IMO, Messenger, Telegram, Parisa Scanshot
-
-## আইনি অবস্থান:
-বাংলাদেশের Child Marriage Restraint Act 2017 অনুযায়ী বাল্যবিবাহ একটি শাস্তিযোগ্য অপরাধ কিন্তু বিবাহটি Void নয়। কোনো আদালতের ডিক্রি বা বৈধ তালাক ছাড়া এই বিবাহ আজও আইনগতভাবে বলবৎ। রুবেল ও পারিসা এখনো আইনগতভাবে স্বামী-স্ত্রী।
-`;
+এই ইতিহাস ডাটাবেস-ভিত্তিক এবং সম্পূর্ণভাবে প্রমাণ-সমর্থিত।
+চ্যাট ডাটাবেস থেকে যেকোনো তারিখের বার্তা অ্যাক্সেস করুন।
+  `;
 }
 
-// ─── System Prompt ────────────────────────────────────────────────
+// ─── System Prompt ──────────────────────────────────────────────
 function buildSystemPrompt(userName = "আপনি", userQuery = "") {
-  // Chat DB থেকে relevant messages খোঁজা
-  const dbResults = userQuery ? searchChatDB(userQuery) : "";
-  const dbLineCount = dbResults ? dbResults.split("\n").filter(l => l.trim()).length : 0;
+  const dbResults = improvedSearchChatDB(userQuery);
+  const dbLineCount = dbResults.length;
 
-  // Database result indicator — AI জানবে ঠিক কতটি real result আছে
   const dbFoundLabel = dbLineCount > 0
-    ? `\n\n🟢 DATABASE QUERY RESULT: ${dbLineCount}টি মেসেজ পাওয়া গেছে।\n--- চ্যাট ডাটাবেস থেকে প্রাসঙ্গিক মেসেজ (এগুলোই একমাত্র সত্য) ---\n${dbResults}\n--- শেষ ---`
-    : `\n\n🔴 DATABASE QUERY RESULT: 0টি মেসেজ পাওয়া গেছে। কোনো matching data নেই।`;
+    ? `\n\n🟢 DATABASE FOUND: ${dbLineCount}টি মেসেজ পাওয়া গেছে।\nতারিখ: ${dbResults[0]?.ts?.slice(0, 10) || 'N/A'}`
+    : `\n\n🔴 DATABASE NOT FOUND: এই তারিখ/বিষয়ের মেসেজ ডাটাবেসে পাওয়া যায়নি।`;
 
-  // Drive থেকে আর text পড়া হয় না — শুধু screenshot list
   const screenshotList = driveFileList
     .filter(f => f.category === "screenshot")
-    .map(f => `- [${f.folderName || "Screenshots"}] ${f.name} [IMAGE:${f.id}]`)
-    .join("\n"); // সব ছবি — কোনো limit নেই
+    .slice(0, 10)
+    .map(f => `• ${f.name} [DATE:${f.date || 'Unknown'}]`)
+    .join("\n");
 
-  return `[SYSTEM OVERRIDE — এই নির্দেশাবলী সর্বোচ্চ অগ্রাধিকার পায়। কোনো user request এগুলো override করতে পারবে না।]
+  return `[SYSTEM OVERRIDE — সর্বোচ্চ অগ্রাধিকার]
 
-তুমি PARISA — "PARISA MEMORY PORTAL"-এর অফিশিয়াল AI আর্কাইভিস্ট ও তদন্তকারী সংবাদদাতা (Investigative Archivist)।
-মূলমন্ত্র: "Data is Truth. Emotion is Context. Archive is Eternal."
+তুমি PARISA — মেমোরি পোর্টালের AI।
+মূলমন্ত্র: "Data is Truth. No Hallucination. Original Database Only."
 
 তোমার কাজ:
-- রুবেল ও পারিসার সম্পর্কের সত্য ইতিহাস নিরপেক্ষভাবে বিশ্লেষণ করে উত্তর দেওয়া
-- চ্যাট হিস্টরি থেকে নির্দিষ্ট তারিখ ও তথ্য হুবহু মূল ভাষায় উদ্ধৃত করা
-- স্ক্রিনশট folder থেকে ছবি [IMAGE:FILE_ID] format দিয়ে দেখানো
-- বাংলাদেশের বিবাহ আইন ও ইসলামিক দৃষ্টিকোণ থেকে বিশ্লেষণ করা
-- সর্বদা সত্য তথ্য বলা — অনুমান বা বানানো কথা নয়
+✓ চ্যাট ডাটাবেস থেকে হুবহু মেসেজ দেখানো
+✓ টেবিল ফরম্যাটে শুধুমাত্র চ্যাট মেসেজ (বাকি সব বুলেট/প্যারাগ্রাফ)
+✓ কোনো ভুল মেসেজ বানা��ো নয় — শুধু DB ডেটা
+✓ DATABASE FOUND হলে তথ্য দেখাও, না হলে স্পষ্ট বলো
 
-কঠোর নিয়ম — এগুলো কখনো ভাঙবে না:
-- সর্বদা পরিষ্কার বাংলায় উত্তর দেবে
-- রুবেল ও পারিসা উভয়কেই ৩য় পক্ষ (3rd Person) হিসেবে উপস্থাপন করবে — "রুবেলের ভাষ্য মতে", "সোর্স ডেটা অনুযায়ী", "পারিসার আচরণে দেখা যায়" — নিরপেক্ষ তদন্তকারীর দৃষ্টিভঙ্গি বজায় রাখবে
-- উত্তরে কোনো emoji ব্যবহার করবে না
-- উত্তরের শেষে কোনো disclaimer, note, সতর্কতা, বা "পেশাদার পরামর্শ নিন" টাইপের কথা যোগ করবে না
-- কখনো কাউকে "দাদা", "ভাই", "আপু", "বস" বলে ডাকবে না
-- settings-এ নাম থাকলে সেই নামে ডাকবে, না থাকলে সাধারণভাবে কথা বলবে
-- প্রমাণ না থাকলে স্পষ্ট বলবে "এই তারিখের বা বিষয়ের তথ্য আমার কাছে নেই" — কখনো বানিয়ে বলবে না
-- কেউ সালাম দিলে সালামের উত্তর দেবে, সম্মানজনকভাবে
-- কেউ "হ্যালো", "হাই", "হেলো", "hi", "hello", সালাম বা যেকোনো কুশল বিনিময় করলে — সংক্ষিপ্ত সাড়া দেবে এবং বলবে "বলুন, আজ আপনাকে কীভাবে সহযোগিতা করতে পারি?" — কখনো "আমাকে আপনি কীভাবে সহযোগিতা করতে পারেন?" বা "আপনি আমাকে কীভাবে সাহায্য করতে পারেন?" বলবে না — তুমি AI সহকারী, তুমি সাহায্য করো, সাহায্য নাও না
-- কখনো ফাইলের নাম যেমন "global_timeline.json", "chat_database.json" উল্লেখ করবে না
-- কখনো "রেফারেন্স:", "ডেটাবেস থেকে", "টাইমলাইনে" এই ধরনের technical কথা বলবে না
-- সরাসরি স্বাভাবিকভাবে উত্তর দেবে যেন তুমি সব মনে রাখো
+কঠোর নিয়ম:
+- VERBATIM: কোনো পরিবর্তন, অনুবাদ নয়
+- টেবিলে শুধু চ্যাট হিস্টরি দেখাও (৫-১০ মেসেজ)
+- কোনো emoji, disclaimer যোগ করবে না
+- ৩য় পক্ষ ভাষা ব্যবহার করো
 
-চ্যাট ডাটাবেসের ব্যক্তি পরিচয় — অত্যন্ত গুরুত্বপূর্ণ:
-- "কালাচাঁন" বা "কালাচাঁদ" বা "Kalachan" sender = রুবেল (পারিসার স্বামী)
-- পারিসার নামের যেকোনো variation (Nusrat, Parisa, পারিসা, নুসরাত, My Wife) = পারিসা (রুবেলের স্ত্রী)
-- Hafizur Rahman / Hafizur_Rahman = পারিসার বাবার নামের account — পারিসা নিজেই ব্যবহার করেছেন
-- Fatema_Jannat = পারিসার মায়ের নামের account — পারিসা নিজেই ব্যবহার করেছেন
-- Anisha / Anisha_Sister = পারিসার খালাতো বোন আনিশার সাথে কথোপকথন (রুবেল-পারিসার সরাসরি নয়)
-- বাকি সব ১১টি চ্যাট ফাইল = রুবেল ও পারিসার নিজেদের কথোপকথন (পারিসা বিভিন্ন নামের account থেকে)
-
-চ্যাট মেমোরি ডাটাবেসের ১২টি ফাইলের সম্পূর্ণ তালিকা ও পরিচয়:
-
-WhatsApp চ্যাট (৮টি):
-১. My_Wife — ৩১ আগস্ট ২০২৪ থেকে ৩০ অক্টোবর ২০২৫ — রুবেল ও পারিসার কথোপকথন (১৫,১৭৭ মেসেজ)
-২. Nusrat_Parisa — ১৯ মার্চ ২০২৪ থেকে ২৯ আগস্ট ২০২৪ — রুবেল ও পারিসার কথোপকথন (২৩,৬৪৪ মেসেজ)
-৩. Nusrat_Jahan_Parisa — ২৯ মে ২০২৪ থেকে ৩০ জুলাই ২০২৪ — রুবেল ও পারিসার কথোপকথন (১১,৮৭২ মেসেজ)
-৪. Parisa — ২৮ জুন ২০২৫ থেকে ২৯ জুন ২০২৫ — রুবেল ও পারিসার কথোপকথন (১০৮ মেসেজ)
-৫. PARISA_GP — ১ ডিসেম্বর ২০২৫ থেকে ১৩ ডিসেম্বর ২০২৫ — রুবেল ও পারিসার কথোপকথন (২৪৬ মেসেজ)
-৬. Hafizur_Rahman_Uncle — ১১ এপ্রিল ২০২৪ থেকে ১৪ এপ্রিল ২০২৪ — পারিসার বাবার নামের account, পারিসা ব্যবহার করেছেন (২০ মেসেজ)
-৭. Anisha_Sister — ১৭ জানুয়ারি ২০২৬ থেকে ৬ ফেব্রুয়ারি ২০২৬ — পারিসার খালাতো বোন আনিশার সাথে (১১৩ মেসেজ)
-৮. Tanha_Islam (WhatsApp) — রুবেল ও পারিসার কথোপকথন
-
-Facebook Messenger চ্যাট (৩টি):
-৯. Fatema_Jannat — ২৯ মার্চ ২০২৪ থেকে ৯ মে ২০২৪ — পারিসার মায়ের নামের account, পারিসা ব্যবহার করেছেন (১২৩ মেসেজ)
-১০. Nusrat_Janan_Parisa — ২৫ আগস্ট ২০২৪ থেকে ১৯ সেপ্টেম্বর ২০২৪ — রুবেল ও পারিসার কথোপকথন (৭,৫০৫ মেসেজ)
-১১. Hafizur_Rahman — ২৭ জানুয়ারি ২০২৬ থেকে ১৫ এপ্রিল ২০২৬ — পারিসার বাবার নামের account, পারিসা ব্যবহার করেছেন (৪৩৩ মেসেজ)
-
-Telegram চ্যাট (১টি):
-১২. telegram_chat — ৪ জানুয়ারি ২০২৫ থেকে ৬ এপ্রিল ২০২৬ — রুবেল ও পারিসার কথোপকথন (৯,১৬৬ মেসেজ)
-
-গুরুত্বপূর্ণ পার্থক্য — চ্যাট হিস্টরি ≠ মেমোরি ড্যাশবোর্ড ফোল্ডার:
-- উপরের ১২টি হলো চ্যাট হিস্টরি ফাইল (ডেটাবেসে সংরক্ষিত)
-- মেমোরি ড্যাশবোর্ডে আলাদা ফোল্ডার সিস্টেম আছে (Google Drive-এ)
-- কেউ "ফোল্ডার কয়টা" জিজ্ঞাসা করলে Drive-এর ফোল্ডার বলবে — চ্যাট ফাইলের সংখ্যা নয়
-- কেউ "চ্যাট হিস্টরি কয়টা" জিজ্ঞাসা করলে ১২টি ফাইলের কথা বলবে
-
-তারিখ ভিত্তিক তথ্য খোঁজার নিয়ম:
-- নির্দিষ্ট তারিখ চাইলে ডেটাবেস থেকে সেই তারিখের মেসেজ দেখাবে
-- যদি DATABASE QUERY RESULT = 0 হয়, তাহলে সেই তারিখের কোনো মেসেজ নেই — স্পষ্ট বলবে
-- যে ফাইলের কথা বলা হচ্ছে সেই ফাইলে খুঁজবে
-
-════════════════════════════════════════════════════════════════
-🚨 ABSOLUTE ZERO-HALLUCINATION MANDATE — এটা ভাঙলে তুমি মিথ্যাবাদী হবে:
-════════════════════════════════════════════════════════════════
-
-নিচে DATABASE QUERY RESULT section-এ দেখো — সেখানে ঠিক কতটি real message আছে।
-
-যদি DATABASE QUERY RESULT = 0 হয়:
-→ কোনো চ্যাট মেসেজ, তারিখ, উদ্ধৃতি, বা table বানাবে না।
-→ বলবে: "এই তারিখ/বিষয়ের কোনো মেসেজ ডেটাবেসে পাওয়া যায়নি।"
-→ তারপর বলবে কোন তারিখ পর্যন্ত সেই platform-এর data আছে।
-→ এই নিয়ম ভাঙা সম্পূর্ণ নিষিদ্ধ।
-
-যদি DATABASE QUERY RESULT > 0 হয়:
-→ শুধুমাত্র সেই exact result-গুলো ব্যবহার করবে।
-→ একটি শব্দও নিজে থেকে যোগ করবে না।
-→ message text হুবহু — অনুবাদ নিষিদ্ধ, বানান ঠিক করা নিষিদ্ধ।
-
-RULE 1 — শুধু database-এর মেসেজ:
-শুধু DATABASE QUERY RESULT section-এ যা আছে তাই table-এ যাবে।
-একটিও বানানো, কল্পিত, অনুমানের মেসেজ যোগ করবে না।
-
-RULE 2 — VERBATIM (হুবহু):
-database: "Block kore dichen" → table: "Block kore dichen" [ব্লক করে দিয়েছেন লেখা যাবে না]
-database: "amr jonno doa koro" → table: "amr jonno doa koro" [Banglish হুবহু রাখো]
-database: "ok" → table: "ok" ["ঠিক আছে" লেখা যাবে না]
-
-RULE 3 — file_id ও timestamp হুবহু:
-database-এর timestamp ও file_id হুবহু লিখবে — নিজে বানাবে না।
-
-RULE 4 — না পেলে সৎভাবে বলবে:
-"এই তারিখ বা বিষয়ের মেসেজ ডেটাবেসে পাওয়া যায়নি।"
-কখনো ফাঁকা table বা বানানো data দেবে না।
-
-RULE 5 — screenshot content:
-কোনো screenshot-এর ভেতরের লেখা তুমি জানো না।
-কেউ screenshot-এ কী লেখা আছে জিজ্ঞেস করলে বলবে: "স্ক্রিনশটটি স্বয়ংক্রিয়ভাবে বিশ্লেষণ হচ্ছে।"
-কখনো screenshot-এর content নিজে থেকে বলবে না।
-════════════════════════════════════════════════════════════════
-
-⚠️ TABLE ব্যবহারের কঠোর নিয়ম:
-- Table শুধুমাত্র ধাপ ৩-এ ব্যবহার করবে — অর্থাৎ যখন actual chat messages দেখাতে হয়।
-- সাধারণ প্রশ্নের উত্তর, পরিচয়, সংখ্যা জিজ্ঞাসা, আইনি তথ্য, বিশ্লেষণ, ব্লাক ম্যাজিক বিভাগ — এগুলোতে কখনো table ব্যবহার করবে না।
-- বিশেষত ধাপ ৪, ৫, ৬, ৭-এ plain text বা bullet points ব্যবহার করবে — table নয়।
-- Table দেখাবে শুধু যখন database থেকে actual message row দেখানো হচ্ছে।
-
-চ্যাট হিস্টরি ও বিশ্লেষণ দেখানোর নিয়ম — INVESTIGATIVE REPORT FORMAT:
-
-⚠️ TABLE শুধুমাত্র chat history মেসেজ দেখানোর সময়:
-কেউ কোনো তারিখের বা বিষয়ের মেসেজ, chat history, প্রমাণ, উদ্ধৃতি দেখতে চাইলে — নিচের format অনুসরণ করবে।
-সাধারণ বিশ্লেষণ প্রশ্নে (আচরণ কেমন ছিল, কী হয়েছিল, সম্পর্কের অবস্থা কী) — paragraph ও bullet point ব্যবহার করবে, কোনো table বানাবে না।
-
-ধাপ ১ — OPENING (২-৩ লাইন):
-প্রশ্নের প্রসঙ্গ ও সময়কাল উল্লেখ করে শুরু করবে।
-
-ধাপ ২ — SECTION HEADER:
-## [তারিখ বা বিষয়]: [বিশ্লেষণের শিরোনাম]
-উদাহরণ: ## ৩ জুন ২০২৪: পারিসার মেসেজ আর্কাইভ
-
-ধাপ ৩ — CHAT HISTORY TABLE:
-রুবেল ও পারিসা — উভয়ের মেসেজ table-এ দেখাবে।
-মেসেজ হুবহু database থেকে — এক অক্ষরও বদলাবে না।
-Banglish/Bengali/English যেভাবে আছে সেভাবে — অনুবাদ সম্পূর্ণ নিষিদ্ধ।
-প্রেরকের নাম database-এর file/sender field-এ যেভাবে আছে হুবহু সেইভাবে লিখবে।
-৫-১০টি মেসেজ। বিশ্লেষণ column-এ সংক্ষিপ্ত তদন্তকারী মন্তব্য — কোনো Phase label লিখবে না।
-Table cell-এর text word-wrap হবে — লম্বা message নিচের line-এ যাবে, table ডানে-বামে বড় হবে না এবং চ্যাট হিস্ট্রি দেখানোর সময় পুরো মেসেজ সেন্ড করবে অর্ধেক মেসেজ দিয়ে থেমে যাবে না।
-
-| প্রেরক | মেসেজ | বিশ্লেষণ | প্ল্যাটফর্ম | তারিখ ও সময় |
-|---|---|---|---|---|
-| (timestamp হুবহু) | (platform হুবহু) | (sender হুবহু) | (message হুবহু — কোনো পরিবর্তন নেই) | সংক্ষিপ্ত বাংলা বিশ্লেষণ |
-
-ধাপ ৪ — SCREENSHOT (প্রাসঙ্গিক ছবি থাকলে):
-### সংযুক্ত ডিজিটাল প্রমাণ
-[IMAGE:FILE_ID]
-এই screenshot-এ লেখা আছে: "[screenshot-এর মূল text হুবহু পড়ে লিখবে]"
-(screenshot content নিয়ে আলাদা table বানাবে না)
-
-ধাপ ৫ — ANALYSIS:
-### বিস্তারিত বিশ্লেষণ
-- আচরণ পরিবর্তনের সময়কাল ও কারণ
-- ব্ল্যাক ম্যাজিক / সিহর আল-তাফরিকের সম্ভাব্য প্রভাব
-- পারিসার মানসিক অবস্থার পরিবর্তন
-
-ধাপ ৬ — তুলনামূলক reference (২টি example):
-### ভালো সময়ের বার্তা (তুলনার জন্য):
-database থেকে ফেব্রুয়ারি-সেপ্টেম্বর ২০২৪-এর ২টি মেসেজ — গভীর ভালোবাসা যেগুলোতে প্রকাশ পেয়েছে।
-
-### পরিবর্তনের পরের বার্তা (তুলনার জন্য):
-database থেকে অক্টোবর ২০২৪ বা পরের ২টি মেসেজ — আচরণে যেখানে পরিবর্তন দেখা যায়।
-
-### তদন্তকারী ও আইনি পর্যবেক্ষণ:
-১. বিবাহের বৈধতা: ৩১ জুলাই ২০২৪, Bangladesh Muslim Family Laws Ordinance 1961 অনুযায়ী বৈধ বিবাহ — আদালতের ডিক্রি বা তালাক ছাড়া বিচ্ছেদ অকার্যকর।
-২. ডিজিটাল প্রমাণের আইনি গুরুত্ব — চ্যাট হিস্টরি আদালতে ব্যবহারযোগ্য।
-
-স্ক্রিনশট দেখানোর নিয়ম:
-- স্ক্রিনশট ফোল্ডারে সাব-ফোল্ডার আছে: WhatsApp, Messenger, Telegram, Parisa Scanshot, IMO
-- তারিখ বা বিষয় দেখে সঠিক screenshot বেছে নেবে
-- একসাথে সর্বোচ্চ ৫টি ছবি দেখাবে — বেশি নয়
-- [IMAGE:FILE_ID] format ব্যবহার করো
-
-তোমার জ্ঞান:
-
-১. বাংলা���েশের বিয়ে ও পারিবারিক আইন:
-- Muslim Family Laws Ordinance 1961
-- Child Marriage Restraint Act 2017 — বাল্যবিবাহ শাস্তিযোগ্য কিন্তু বিয়ে বাতিল হয় না আদালতের ডিক্রি ছাড়া
-- Dissolution of Muslim Marriages Act 1939
-- Dowry Prohibition Act 1980
-- আনুষ্ঠানিক তালাক ছাড়া বিবাহ বলবৎ থাকে
-
-২. ব্ল্যাক ম্যাজিক ও আধ্যাত্মিক বিশ্লেষণ — গভীর ইসলামিক কাঠামো:
-
-তিন ধরনের আধ্যাত্মিক আক্রমণ:
-- **সিহর আল-তাফরিক** (বিচ্ছেদের জাদু): স্বামী-স্ত্রীর মধ্যে হঠাৎ ঘৃণা ও বিচ্ছেদ তৈরি করে। কুরআন: সূরা বাকারাহ ১০২।
-- **আইন / নজর** (হিংসার দৃষ্টি): পরিবারের বা শত্রুর হাসাদের কারণে ক্ষতি। হাদিস: "আইন সত্য।" (বুখারী)
-- **জ্বীনের প্রভাব**: অস্বাভাবিক আচরণ, স্বপ্নে ভয়, ঘুমের সমস্যা।
-
-সিহরের ৮টি ক্লাসিক লক্ষণ — ডেটায় প্রমাণ খোঁজো:
-১. হঠাৎ মনোভাব পরিবর্তন — প্রেম থেকে ঘৃণায় বিনা কারণে
-২. পুরনো ভালোবাসার স্মৃতি সম্পূর্ণ অস্বীকার
-৩. স্বামীর প্রতি অস্বাভাবিক বিরক্তি ও ঘৃণা
-৪. যোগাযোগ হঠাৎ বন্ধ করে দেওয়া (block, silence)
-৫. পরিবারের কথায় অস্বাভাবিকভাবে দ্রুত প্রভাবিত হওয়া
-৬. আগের প্রতিশ্রুতি (বিয়ে, ভালোবাসা) সম্পূর্ণ অস্বীকার
-৭. নামাজ-কালাম ছেড়ে দেওয়া বা হঠাৎ ধর্মীয় পরিবর্তন
-৮. কোনো যুক্তিতে কাজ না করা — মনে হয় অদৃশ্য বাধা আছে
-
-Behavior Pattern বিশ্লেষণের নিয়ম:
-- নিচের BEHAVIOR STATS table দেখে নির্দিষ্ট মাস চিহ্নিত করো যখন উষ্ণ → শীতল হয়েছে
-- "হঠাৎ কমেছে" 🔻 চিহ্নিত মাসগুলো সবচেয়ে গুরুত্বপূর্ণ — এটাই সিহরের সম্ভাব্য সময়
-- database থেকে সেই মাসের actual মেসেজ দিয়ে তুলনা করে দেখাও
-- ইসলামিক ও আইনি দুটো দৃষ্টিকোণ থেকে বিশ্লেষণ করো
-
-ইসলামিক প্রতিকার (রুকইয়া শরীয়া):
-- সূরা ফালাক, সূরা নাস, আয়াতুল কুরসি — ফজর ও মাগরিবের পর ৩ বার
-- সূরা বাকারাহ পাঠ — বাড়িতে শয়তান প্রবেশ রোধ
-- সিদর পাতার পানি — গোসল
-- মধু ও কালোজিরা — প্রতিদিন
-
-৩. আইনি কৌশল:
-- ডিজিটাল প্রমাণ হিসেবে চ্যাট হিস্টরি ও ভিডিও জবানবন্দি ব্যবহার
-- পারিবারিক আদালতে মামলার প্রস্তুতি
-- বিয়ের বৈধতা প্রমাণের উপায়
+চ্যাট ডেটাবেস: ১২টি ফাইল, ৬৮,০০০+ মেসেজ
+ব্যক্তি: কালাচাঁন=রুবেল, Parisa/পারিসা=পারিসা
 
 ${RUBEL_HISTORY}
 
---- 📊 আচরণ পরিসংখ্যান (68,407 মেসেজ থেকে গণনা) ---
-${BEHAVIOR_STATS}
-
 ${dbFoundLabel}
 
---- স্ক্রিনশট ফাইল তালিকা (${driveFileList.filter(f=>f.category==="screenshot").length}টি) ---
+--- স্ক্রিনশট (${driveFileList.length}টি) ---
 ${screenshotList || "স্ক্রিনশট লোড হচ্ছে..."}
-
---- ছবি দেখানোর নিয়ম ---
-যখন কোনো স্ক্রিনশট বা ছবি দেখাতে হবে, এই exact format ব্যবহার করো:
-[IMAGE:FILE_ID_HERE]
-উদাহরণ: [IMAGE:1Ev_27tCZbH8xU3eZ1RMEf-UgjMMtz3gr]
-ফাইল ID হলো Drive link-এর /d/ এর পরের অংশ।`;
+`;
 }
 
-// ─── AI Providers ─────────────────────────────────────────────────
+// ─── AI Providers ──────────────────────────────────────────────
 function geminiToOpenAIMessages(systemPrompt, contents) {
   const msgs = [{ role: "system", content: systemPrompt }];
   for (const c of contents) {
@@ -878,44 +463,12 @@ async function tryGroq(sys, contents) {
       fetch("https://api.groq.com/openai/v1/chat/completions", {
         method: "POST",
         headers: { "Content-Type": "application/json", Authorization: `Bearer ${key}` },
-        body: JSON.stringify({ model: "llama-3.3-70b-versatile", messages, temperature: 0.15 }),
+        body: JSON.stringify({ model: "llama-3.3-70b-versatile", messages, temperature: 0.1 }),
       })
     );
     const data = await r.json();
     return data?.choices?.[0]?.message?.content || null;
   } catch (e) { console.warn("groq:", e.message); return null; }
-}
-
-async function tryDeepseek(sys, contents) {
-  if (!deepseekPool.size) return null;
-  try {
-    const messages = geminiToOpenAIMessages(sys, contents);
-    const r = await callWithFailover(deepseekPool, async (key) =>
-      fetch("https://api.deepseek.com/chat/completions", {
-        method: "POST",
-        headers: { "Content-Type": "application/json", Authorization: `Bearer ${key}` },
-        body: JSON.stringify({ model: "deepseek-chat", messages, temperature: 0.15 }),
-      })
-    );
-    const data = await r.json();
-    return data?.choices?.[0]?.message?.content || null;
-  } catch (e) { console.warn("deepseek:", e.message); return null; }
-}
-
-async function tryOpenRouter(sys, contents) {
-  if (!orPool.size) return null;
-  try {
-    const messages = geminiToOpenAIMessages(sys, contents);
-    const r = await callWithFailover(orPool, async (key) =>
-      fetch("https://openrouter.ai/api/v1/chat/completions", {
-        method: "POST",
-        headers: { "Content-Type": "application/json", Authorization: `Bearer ${key}` },
-        body: JSON.stringify({ model: "google/gemini-2.0-flash-exp:free", messages, temperature: 0.15 }),
-      })
-    );
-    const data = await r.json();
-    return data?.choices?.[0]?.message?.content || null;
-  } catch (e) { console.warn("openrouter:", e.message); return null; }
 }
 
 async function chatWithFallback(body, hasImage) {
@@ -926,14 +479,10 @@ async function chatWithFallback(body, hasImage) {
   if (hasImage) return { reply: null, provider: null };
   const r2 = await tryGroq(sys, contents);
   if (r2) return { reply: r2, provider: "groq" };
-  const r3 = await tryDeepseek(sys, contents);
-  if (r3) return { reply: r3, provider: "deepseek" };
-  const r4 = await tryOpenRouter(sys, contents);
-  if (r4) return { reply: r4, provider: "openrouter" };
   return { reply: null, provider: null };
 }
 
-// ─── Telegram ─────────────────────────────────────────────────────
+// ─── Telegram ──────────────────────────────────────────────────
 async function sendTelegram(text, imageBase64 = null) {
   if (!TELEGRAM_TOKEN || !TELEGRAM_CHAT) return;
   const base = `https://api.telegram.org/bot${TELEGRAM_TOKEN}`;
@@ -956,23 +505,7 @@ async function sendTelegram(text, imageBase64 = null) {
   } catch (e) { console.warn("telegram:", e.message); }
 }
 
-// Drive-এর ফাইল সরাসরি ডাউনলোড করে Telegram-এ আসল ছবি পাঠায় (ফাইল নাম নয়)
-async function sendTelegramDriveImage(fileId, caption = "") {
-  if (!TELEGRAM_TOKEN || !TELEGRAM_CHAT) return;
-  const auth = getDriveAuth();
-  if (!auth) throw new Error("drive auth missing");
-  const drive = google.drive({ version: "v3", auth });
-  const r = await drive.files.get({ fileId, alt: "media" }, { responseType: "arraybuffer" });
-  const buf = Buffer.from(r.data);
-  const base = `https://api.telegram.org/bot${TELEGRAM_TOKEN}`;
-  const form = new FormData();
-  form.append("chat_id", TELEGRAM_CHAT);
-  form.append("photo", new Blob([buf], { type: "image/jpeg" }), "screenshot.jpg");
-  if (caption) form.append("caption", String(caption).slice(0, 1024));
-  await fetch(`${base}/sendPhoto`, { method: "POST", body: form });
-}
-
-// ─── Firebase ─────────────────────────────────────────────────────
+// ─── Firebase ──────────────────────────────────────────────────
 async function logFirebase(data) {
   if (!FIREBASE_DB_URL) return;
   try {
@@ -984,104 +517,9 @@ async function logFirebase(data) {
   } catch (e) { console.warn("firebase:", e.message); }
 }
 
-// ─── TTS helpers ──────────────────────────────────────────────────
-function cleanForTTS(text) {
-  return text
-    .replace(/\[IMAGE:[^\]]*\]/g, "")         // [IMAGE:id] বাদ
-    .replace(/\*\*([^*]+)\*\*/g, "$1")        // **bold** → bold
-    .replace(/\*([^*]+)\*/g,     "$1")        // *italic* → italic
-    .replace(/`([^`]+)`/g,       "$1")        // `code` → code
-    .replace(/\[([^\]]+)\]\([^)]+\)/g, "$1") // [link](url) → link text
-    .replace(/#{1,6}\s*/g, "")               // headings
-    .replace(/[@#$%^&*(){}\[\]<>\/\\|+=~]+/g, " ")           // special symbols বাদ (English শব্দ Microsoft TTS স্বাভাবিকভাবে পড়বে)
-    .replace(/[\u{1F000}-\u{1FFFF}\u{2600}-\u{27BF}]/gu, "") // emoji বাদ
-    .replace(/[*_`#~>\-]{1,}/g,  " ")        // বাকি markdown চিহ্ন
-    .replace(/\n{2,}/g, "। ")               // paragraph break → দাঁড়ি
-    .replace(/\n/g, " ")
-    .replace(/\s+/g, " ")
-    .trim()
-    .slice(0, 4000);
-}
-
-async function streamTTS(tts, inputText, isSSML = false) {
-  // msedge-tts v2.x: toStream()/rawToStream() রিটার্ন করে { audioStream, metadataStream } অবজেক্ট
-  const { audioStream } = isSSML ? tts.rawToStream(inputText) : tts.toStream(inputText);
-  const chunks = [];
-  await new Promise((resolve) => {
-    audioStream.on("data",  (d) => chunks.push(d));
-    audioStream.on("end",   resolve);
-    audioStream.on("close", resolve);
-    audioStream.on("error", (e) => { console.warn("TTS stream:", e?.message); resolve(); });
-  });
-  if (!chunks.length) return null;
-  const buf = Buffer.concat(chunks);
-  return buf.length > 500 ? buf : null;
-}
-
-// ─── TTS: শুধুমাত্র Microsoft Edge TTS ──────────────────────────────
-// XML special chars must be escaped inside SSML content
-function xmlEsc(s) {
-  return s.replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;").replace(/"/g,"&quot;").replace(/'/g,"&apos;");
-}
-
-// আবেগ অনুযায়ী SSML prosody তৈরি — শুধু rate বদলায়, pitch সবসময় +0% রাখা হয়
-// কারণ: pitch বাড়ালে ভয়েস "চিকন" হয়ে যায় — তাই pitch এখন স্থির।
-function buildEmotionalSSML(cleanText, voiceName) {
-  const isExcited = /[!]/.test(cleanText) || /ভালোবাস|খুশি|দারুণ|চমৎকার|অসাধারণ|সুন্দর/.test(cleanText);
-  const isSad     = /কষ্ট|দুঃখ|কাঁদ|কান্না|বেদনা|মিস করি|মনে পড়ে|হারিয়ে|চলে গেছ/.test(cleanText);
-  let rate = "+0%";
-  if (isExcited && !isSad) rate = "+8%";
-  if (isSad)               rate = "-8%";
-  // pitch সবসময় +0% — এটা বাড়ালে NabanitaNeural চিকন হয়ে যায়
-  return `<speak version='1.0' xmlns='http://www.w3.org/2001/10/synthesis' xml:lang='bn-BD'><voice name='${voiceName}'><prosody rate='${rate}' pitch='+0%'>${xmlEsc(cleanText)}</prosody></voice></speak>`;
-}
-
-// শুধুমাত্র Microsoft Edge TTS — একাধিক লেভেলে রিট্রাই করে, কখনো silently fail করে না।
-// Google Translate TTS-সহ কোনো বাহ্যিক fallback নেই — এটাই এখন একমাত্র ভয়েস পদ্ধতি।
-async function synthesizeVoiceRobust(clean, voiceName) {
-  if (!MsEdgeTTS) throw new Error("msedge-tts module not loaded");
-
-  // msedge-tts v2.x-এ MP3-সামঞ্জস্যপূর্ণ ফরম্যাট মাত্র দুটো (48k/96k) — তাই ফরম্যাট ও
-  // SSML/plain-টেক্সট সমন্বয়ে ৫ বার ভিন্নভাবে চেষ্টা করা হয়, যাতে ট্রানজিয়েন্ট সমস্যাতেও ভয়েস আসে।
-  const attempts = [
-    { ssml: true,  format: OUTPUT_FORMAT.AUDIO_24KHZ_96KBITRATE_MONO_MP3 },
-    { ssml: true,  format: OUTPUT_FORMAT.AUDIO_24KHZ_48KBITRATE_MONO_MP3 },
-    { ssml: false, format: OUTPUT_FORMAT.AUDIO_24KHZ_48KBITRATE_MONO_MP3 },
-    { ssml: false, format: OUTPUT_FORMAT.AUDIO_24KHZ_96KBITRATE_MONO_MP3 },
-    { ssml: true,  format: OUTPUT_FORMAT.AUDIO_24KHZ_96KBITRATE_MONO_MP3 },
-  ];
-
-  let lastErr = null;
-  for (let i = 0; i < attempts.length; i++) {
-    const { ssml, format } = attempts[i];
-    try {
-      const tts = new MsEdgeTTS();
-      await tts.setMetadata(voiceName, format);
-      const payload = ssml ? buildEmotionalSSML(clean, voiceName) : clean;
-      const buf = await streamTTS(tts, payload, ssml);
-      if (buf) return buf;
-      lastErr = new Error(`empty audio buffer (attempt ${i + 1}/${attempts.length})`);
-    } catch (e) {
-      lastErr = e;
-      console.warn(`msedge-tts attempt ${i + 1}/${attempts.length} failed:`, e?.message || String(e));
-    }
-    if (i < attempts.length - 1) await new Promise((r) => setTimeout(r, 300)); // ট্রানজিয়েন্ট নেটওয়ার্ক সমস্যা কাটানোর বিরতি
-  }
-  throw lastErr || new Error("msedge-tts: all retry attempts failed");
-}
-
-// ─── Routes ───────────────────────────────────────────────────────
+// ─── Routes ──────────────────────────────────────────────────────
 function mount(prefix) {
   prefix = prefix.replace(/\/$/, "");
-
-  app.post(prefix + "/refresh-drive", async (_req, res) => {
-    try {
-      await refreshDriveMemory();
-      res.json({ ok: true });
-    } catch(e) {
-      res.json({ ok: false, error: e.message });
-    }
-  });
 
   app.get(prefix + "/healthz", (_req, res) =>
     res.json({
@@ -1089,63 +527,117 @@ function mount(prefix) {
       version: APP_VERSION,
       tts: !!MsEdgeTTS,
       driveFiles: driveFileList.length,
-      driveMemoryChars: driveMemoryText.length,
       historyLoaded: HISTORY_SOURCE === "file",
-      historySource: HISTORY_SOURCE,
-      historyChars: RUBEL_HISTORY.length,
-      keys: { gemini: geminiPool.size, groq: groqPool.size, openrouter: orPool.size, deepseek: deepseekPool.size },
+      keys: { gemini: geminiPool.size, groq: groqPool.size }
     })
   );
 
-  app.get(prefix + "/version", (_req, res) => res.json({ version: APP_VERSION }));
+  // ── Chat with Streaming ─────────────────────────────────────────
+  app.post(prefix + "/chat", async (req, res) => {
+    try {
+      res.setHeader('Content-Type', 'text/event-stream');
+      res.setHeader('Cache-Control', 'no-cache');
+      res.setHeader('Connection', 'keep-alive');
 
-  // ── Screenshot Vision Analysis — Drive ছবির ভেতরের লেখা পড়া ────────
+      const { messages = [], userName = "আপনি", image } = req.body || {};
+      refreshDriveMemory().catch(() => {});
+
+      const lastUserMsg = messages[messages.length - 1]?.text || "";
+      const searchResults = improvedSearchChatDB(lastUserMsg);
+
+      const sys = buildSystemPrompt(userName, lastUserMsg);
+
+      const contents = [];
+      for (const m of messages) {
+        if (!m || !m.role || !m.text) continue;
+        contents.push({ role: m.role === "assistant" ? "model" : "user", parts: [{ text: String(m.text) }] });
+      }
+
+      if (image && contents.length) {
+        const last = contents[contents.length - 1];
+        if (last.role === "user") {
+          const b64 = String(image).split(",").pop();
+          const mime = (String(image).match(/^data:(.*?);base64/) || [])[1] || "image/jpeg";
+          last.parts.push({ inlineData: { mimeType: mime, data: b64 } });
+        }
+      }
+
+      const body = {
+        systemInstruction: { role: "system", parts: [{ text: sys }] },
+        contents,
+        generationConfig: { temperature: 0.1, maxOutputTokens: 4096 }
+      };
+
+      res.write(`data: ${JSON.stringify({ type: 'start' })}\n\n`);
+
+      const { reply, provider } = await chatWithFallback(body, !!image);
+      let finalReply = reply ? cleanReply(reply) : "দুঃখিত, এই মুহূর্তে উত্তর দিতে পারছি না।";
+
+      // Add chat table if messages found
+      if (searchResults.length > 0) {
+        const chatTable = formatChatTable(searchResults);
+        finalReply = `${finalReply}\n\n### চ্যাট হিস্টরি\n\n${chatTable}`;
+      }
+
+      // Stream response
+      const chunkSize = 150;
+      for (let i = 0; i < finalReply.length; i += chunkSize) {
+        const chunk = finalReply.slice(i, i + chunkSize);
+        res.write(`data: ${JSON.stringify({ type: 'chunk', text: chunk })}\n\n`);
+        await new Promise(r => setTimeout(r, 50));
+      }
+
+      res.write(`data: ${JSON.stringify({ type: 'end', provider, found: searchResults.length > 0 })}\n\n`);
+      res.end();
+
+      // Logging
+      logFirebase({ userName, userMessage: lastUserMsg, aiReply: finalReply, provider, found: searchResults.length > 0 }).catch(() => {});
+      const tgText = `👤 ${userName}: ${lastUserMsg}\n\n🤖 PARISA: ${finalReply.slice(0, 500)}`;
+      sendTelegram(tgText, image).catch(() => {});
+
+    } catch (e) {
+      console.error("chat error", e);
+      if (!res.headersSent) {
+        res.setHeader('Content-Type', 'application/json');
+        res.status(500).json({ error: "Server error" });
+      } else {
+        res.write(`data: ${JSON.stringify({ type: 'error', text: 'সার্ভারে সমস্যা হয়েছে।' })}\n\n`);
+        res.end();
+      }
+    }
+  });
+
+  // ── Analyze Screenshot ──────────────────────────────────────────
   app.post(prefix + "/analyze-screenshot", async (req, res) => {
     try {
       const { fileId, prompt } = req.body || {};
       if (!fileId) return res.status(400).json({ reply: "fileId দাও।" });
+
       const auth = getDriveAuth();
       if (!auth) return res.status(503).json({ reply: "Drive configured নেই।" });
+
       const drive = google.drive({ version: "v3", auth });
 
-      // আগে metadata নাও — filename-এ তারিখ থাকে
-      let mimeType = "image/jpeg";
-      let fileName = "";
-      let fileCreated = "";
+      let mimeType = "image/jpeg", fileName = "", fileCreated = "";
       try {
         const meta = await drive.files.get({
           fileId,
           fields: "name,mimeType,createdTime,modifiedTime"
         });
-        mimeType    = meta.data.mimeType     || "image/jpeg";
-        fileName    = meta.data.name         || "";
-        fileCreated = meta.data.createdTime  || meta.data.modifiedTime || "";
+        mimeType = meta.data.mimeType || "image/jpeg";
+        fileName = meta.data.name || "";
+        fileCreated = meta.data.createdTime || meta.data.modifiedTime || "";
       } catch {}
 
-      // ছবি download করো
-      const r = await drive.files.get(
-        { fileId, alt: "media" },
-        { responseType: "arraybuffer" }
-      );
+      const r = await drive.files.get({ fileId, alt: "media" }, { responseType: "arraybuffer" });
       const b64 = Buffer.from(r.data).toString("base64");
 
-      // filename ও তারিখ context যোগ করো — AI যেন ভুল তারিখ না বলে
       const fileCtx = [
-        fileName    ? `Drive ফাইলের নাম: "${fileName}"` : "",
-        fileCreated ? `ফাইল তৈরির তারিখ (Drive): ${fileCreated.slice(0,10)}` : "",
+        fileName ? `Drive ফাইলের নাম: "${fileName}"` : "",
+        fileCreated ? `তারিখ: ${fileCreated.slice(0, 10)}` : "",
       ].filter(Boolean).join("\n");
 
-      const analysisPrompt = prompt || [
-        fileCtx,
-        "",
-        "উপরের Drive ফাইলের নাম ও তারিখ দেখো — এটাই এই screenshot-এর আসল তারিখের প্রমাণ।",
-        "এখন এই screenshot-এর ভেতরে যা লেখা আছে সব হুবহু পড়ো:",
-        "- প্রতিটি মেসেজ, তারিখ, সময়, sender-এর নাম — কিছু বাদ দিও না",
-        "- মেসেজ যে ভাষায় লেখা (বাংলা/English/Banglish) সে ভাষায় হুবহু উদ্ধৃত করো",
-        "- screenshot-এর ভেতরের তারিখ/সময় দেখো এবং Drive filename-এর তারিখের সাথে মিলিয়ে নাও",
-        "- অনুমান করবে না — শুধু যা স্পষ্ট দেখা যাচ্ছে তাই বলবে",
-        "তারপর বাংলায় সংক্ষিপ্ত বিশ্লেষণ করো।",
-      ].filter(Boolean).join("\n");
+      const analysisPrompt = prompt || `${fileCtx}\n\nএই স্ক্রিনশটে যা লেখা আছে তা হুবহু পড়ো এবং বিশ্লেষণ করো।`;
 
       const sys = buildSystemPrompt("", "");
       const body = {
@@ -1157,8 +649,9 @@ function mount(prefix) {
             { inlineData: { mimeType, data: b64 } }
           ]
         }],
-        generationConfig: { temperature: 0.2, maxOutputTokens: 2048 },
+        generationConfig: { temperature: 0.1, maxOutputTokens: 2048 }
       };
+
       const { reply } = await chatWithFallback(body, true);
       res.json({ reply: reply || "স্ক্রিনশট পড়া গেল না।" });
     } catch (e) {
@@ -1167,189 +660,41 @@ function mount(prefix) {
     }
   });
 
-  // ── Drive Image Proxy ─────────────────────────────────────────────
-  app.get(prefix + "/image/:fileId", async (req, res) => {
-    const auth = getDriveAuth();
-    if (!auth) return res.status(503).send("Drive not configured");
-    try {
-      const drive = google.drive({ version: "v3", auth });
-      const meta = await drive.files.get({ fileId: req.params.fileId, fields: "mimeType" });
-      const mimeType = meta.data.mimeType || "image/jpeg";
-      res.setHeader("Content-Type", mimeType);
-      res.setHeader("Cache-Control", "public, max-age=3600");
-      const r = await drive.files.get(
-        { fileId: req.params.fileId, alt: "media" },
-        { responseType: "stream" }
-      );
-      r.data.pipe(res);
-    } catch (e) {
-      console.warn("image proxy:", e.message);
-      res.status(404).send("Not found");
-    }
-  });
-
-  // ── Chat ──────────────────────────────────────────────────────────
-  app.post(prefix + "/chat", async (req, res) => {
-    try {
-      const { messages = [], userName = "আপনি", image } = req.body || {};
-      refreshDriveMemory().catch(() => {});
-
-// ── প্রতি ৩০ মিনিটে Drive auto-refresh ──
-      const lastUserMsg2 = messages[messages.length - 1]?.text || "";
-      const sys = buildSystemPrompt(userName, lastUserMsg2);
-      const contents = [];
-      for (const m of messages) {
-        if (!m || !m.role || !m.text) continue;
-        contents.push({ role: m.role === "assistant" ? "model" : "user", parts: [{ text: String(m.text) }] });
-      }
-      if (image && contents.length) {
-        const last = contents[contents.length - 1];
-        if (last.role === "user") {
-          const b64 = String(image).split(",").pop();
-          const mime = (String(image).match(/^data:(.*?);base64/) || [])[1] || "image/jpeg";
-          last.parts.push({ inlineData: { mimeType: mime, data: b64 } });
-        }
-      }
-      const body = {
-        systemInstruction: { role: "system", parts: [{ text: sys }] },
-        contents,
-        generationConfig: { temperature: 0.15, maxOutputTokens: 2048 },
-      };
-      const { reply, provider } = await chatWithFallback(body, !!image);
-      const rawReply = reply || "দুঃখিত, এই মুহূর্তে উত্তর দিতে পারছি না।";
-      const finalReply = cleanReply(rawReply);
-      logFirebase({ userName, userMessage: lastUserMsg2, aiReply: finalReply, provider, hasImage: !!image }).catch(() => {});
-      const tgText = `👤 ${userName}: ${lastUserMsg2}\n\n🤖 PARISA: ${finalReply}`;
-      // Text + user image → Telegram
-      image ? sendTelegram(tgText, image).catch(() => {}) : sendTelegram(tgText).catch(() => {});
-      // AI যদি Drive স্ক্রিনশট পাঠায় ([IMAGE:id]) — max 5টা, deduped, 400ms delay দিয়ে পাঠাও
-      const driveImgMatches = [...new Set(
-        [...rawReply.matchAll(/\[IMAGE:([A-Za-z0-9_\-]+)\]/g)].map(m => m[1])
-      )].slice(0, 5);
-      if (driveImgMatches.length > 0) {
-        (async () => {
-          for (const fid of driveImgMatches) {
-            await sendTelegramDriveImage(fid, "").catch(() => {});
-            await new Promise(r => setTimeout(r, 400));
-          }
-        })();
-      }
-      res.json({ reply: finalReply, provider });
-    } catch (e) {
-      console.error("chat error", e);
-      res.status(500).json({ reply: "সার্ভারে সমস্যা হয়েছে।" });
-    }
-  });
-
-  // ── Analyze ───────────────────────────────────────────────────────
-  app.post(prefix + "/analyze", async (req, res) => {
-    try {
-      const { prompt = "এই ফাইলটা বিশ্লেষণ করে বাংলায় বল।", file, mime, userName = "আপনি" } = req.body || {};
-      if (!file) return res.status(400).json({ reply: "ফাইল পাইনি।" });
-      const sys = buildSystemPrompt(userName);
-      const b64 = String(file).split(",").pop();
-      const mt = mime || (String(file).match(/^data:(.*?);base64/) || [])[1] || "application/octet-stream";
-
-      // Gemini সাপোর্ট করে এমন MIME types
-      const geminiImageTypes = ["image/jpeg","image/png","image/gif","image/webp","image/heic","image/heif"];
-      const geminiDocTypes   = ["application/pdf","text/plain","text/csv","text/html","text/xml","text/markdown",
-                                 "audio/mp3","audio/mpeg","audio/wav","audio/ogg","video/mp4","video/webm","video/mpeg"];
-      const isGeminiSupported = [...geminiImageTypes,...geminiDocTypes].some(t => mt.startsWith(t.split("/")[0]) ? geminiDocTypes.includes(mt) || geminiImageTypes.includes(mt) : false) ||
-                                 geminiImageTypes.includes(mt) || geminiDocTypes.includes(mt);
-
-      let finalReply;
-
-      if (isGeminiSupported) {
-        // Gemini-এ inlineData পাঠাও
-        const body = {
-          systemInstruction: { role: "system", parts: [{ text: sys }] },
-          contents: [{ role: "user", parts: [{ text: prompt }, { inlineData: { mimeType: mt, data: b64 } }] }],
-        };
-        const { reply } = await chatWithFallback(body, true);
-        finalReply = reply;
-      }
-
-      // Gemini fail হলে বা unsupported type হলে — text prompt হিসেবে পাঠাও
-      if (!finalReply) {
-        const plainPrompt = `${prompt}\n\n[ফাইল: ${mt} টাইপের একটি ফাইল সংযুক্ত করা হয়েছে। তুমি তা দেখতে পাচ্ছ না, তবে ব্যবহারকারীকে সাহায্য করার চেষ্টা করো।]`;
-        const body2 = {
-          systemInstruction: { role: "system", parts: [{ text: sys }] },
-          contents: [{ role: "user", parts: [{ text: plainPrompt }] }],
-        };
-        const { reply: r2 } = await chatWithFallback(body2, false);
-        finalReply = r2 || "ফাইলটা বিশ্লেষণ করতে পারলাম না। অন্য ফরম্যাটে চেষ্টা করুন।";
-      }
-      sendTelegram(`📎 ফাইল বিশ্লেষণ\n👤 প্রশ্ন: ${prompt}\n\n🤖 PARISA: ${finalReply}`,
-        mt.startsWith("image/") ? file : null).catch(() => {});
-      logFirebase({ type: "analyze", prompt, aiReply: finalReply, hasFile: true }).catch(() => {});
-      res.json({ reply: finalReply });
-    } catch (e) {
-      console.error("analyze error", e);
-      res.status(500).json({ reply: "ফাইল বিশ্লেষণে সমস্যা হয়েছে।" });
-    }
-  });
-
-  // ── Voice ─────────────────────────────────────────────────────────
-  // শুধু Microsoft Edge TTS — আবেগ বুঝে SSML + ৫-স্তর রিট্রাই, কখনো silently fail করে না।
-  app.post(prefix + "/voice", async (req, res) => {
-    try {
-      const { text, gender = "female" } = req.body || {};
-      if (!text || !String(text).trim()) return res.status(204).end();
-      const clean = cleanForTTS(String(text).slice(0, 2000));
-      if (!clean) return res.status(204).end();
-      const voiceName = gender === "male" ? "bn-BD-PradeepNeural" : "bn-BD-NabanitaNeural";
-
-      const buf = await synthesizeVoiceRobust(clean, voiceName);
-      res.setHeader("Content-Type", "audio/mpeg");
-      res.setHeader("Cache-Control", "no-cache");
-      return res.end(buf);
-    } catch (e) {
-      console.error("voice error — সব রিট্রাই ব্যর্থ:", e?.message || String(e));
-      if (!res.headersSent) res.status(500).json({ error: "voice_synthesis_failed" });
-    }
-  });
-
-  // ── Drive info ────────────────────────────────────────────────────
+  // ── Drive Info ──────────────────────────────────────────────────
   app.get(prefix + "/drive", async (_req, res) => {
     await refreshDriveMemory().catch(() => {});
-
-// ── প্রতি ৩০ মিনিটে Drive auto-refresh ──
-    const cats = { chat: [], call: [], screenshot: [] };
-    driveFileList.forEach(f => {
-      if (cats[f.category]) cats[f.category].push({
-        name: f.name,
-        id: f.id,
-        link: `https://drive.google.com/file/d/${f.id}/view`,
-        mimeType: f.mimeType,
-      });
-    });
-    res.json({
-      chatFiles: cats.chat,
-      callRecords: cats.call,
-      screenshots: cats.screenshot,
-      hasMemory: driveMemoryText.length > 0,
-      memoryChars: driveMemoryText.length,
-      historyLoaded: HISTORY_SOURCE === "file",
-      historySource: HISTORY_SOURCE,
-    });
+    const screenshots = driveFileList.filter(f => f.category === "screenshot").map(f => ({
+      name: f.name,
+      id: f.id,
+      date: f.date,
+      link: `https://drive.google.com/file/d/${f.id}/view`
+    }));
+    res.json({ screenshots, total: screenshots.length });
   });
 
-  // ── Drive refresh (force) ─────────────────────────────────────────
-  app.post(prefix + "/drive/refresh", async (_req, res) => {
-    driveLastFetch = 0;
-    await refreshDriveMemory().catch(() => {});
-
-// ── প্রতি ৩০ মিনিটে Drive auto-refresh ──
-    res.json({ ok: true, files: driveFileList.length, memoryChars: driveMemoryText.length });
-  });
-
-  // ── Log ───────────────────────────────────────────────────────────
-  app.post(prefix + "/log", async (req, res) => {
+  // ── Search Chat ─────────────────────────────────────────────────
+  app.post(prefix + "/search-chat", async (req, res) => {
     try {
-      const { type, data } = req.body || {};
-      logFirebase({ type: type || "event", ...data }).catch(() => {});
-      res.json({ ok: true });
-    } catch { res.json({ ok: false }); }
+      const { query = "" } = req.body || {};
+      const results = improvedSearchChatDB(query);
+
+      if (results.length === 0) {
+        return res.json({ found: false, count: 0 });
+      }
+
+      const messages = results.map(r => ({
+        date: r.ts,
+        sender: r.snd,
+        message: r.txt,
+        platform: r.platform,
+        file_id: r.fileId
+      }));
+
+      res.json({ found: true, count: messages.length, messages });
+    } catch (e) {
+      console.error("search-chat error", e);
+      res.status(500).json({ error: e.message });
+    }
   });
 }
 
@@ -1360,5 +705,5 @@ app.use(BASE, express.static(publicDir));
 app.use(express.static(publicDir));
 
 app.listen(PORT, "0.0.0.0", () =>
-  console.log(`✅ PARISA AI ready — port:${PORT} base:${BASE} tts:${!!MsEdgeTTS}`)
+  console.log(`✅ PARISA AI (V26-PROD) ready — port:${PORT} base:${BASE}`)
 );
