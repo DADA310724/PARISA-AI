@@ -4,10 +4,10 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "dev": "node --max-old-space-size=512 server.js",
-    "start": "node --max-old-space-size=512 server.js",
+    "dev": "node --max-old-space-size=1024 server-v2.js",
+    "start": "node --max-old-space-size=1024 server-v2.js",
     "build": "echo 'no build step'",
-    "serve": "node --max-old-space-size=512 server.js",
+    "serve": "node --max-old-space-size=1024 server-v2.js",
     "typecheck": "echo 'no typecheck'"
   },
   "dependencies": {
