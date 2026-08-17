@@ -128,11 +128,26 @@ PARISA MEMORY PORTAL এ আপনাকে স্বাগতম।
     if (!html || !html.includes("<table")) return html;
     const wrap = document.createElement("div");
     wrap.innerHTML = html;
-    wrap.querySelectorAll("table tbody tr").forEach(tr => {
+    wrap.querySelectorAll("table").forEach(table => {
+      const headers = [...table.querySelectorAll("thead th")]
+        .map(th => (th.textContent || "").trim().toLowerCase());
+      const findHeader = (...names) => headers.findIndex(h => names.some(name => h.includes(name)));
+      const dateIndex = findHeader("তারিখ", "সময়", "সময়", "date", "time");
+      const platformIndex = findHeader("প্ল্যাটফর্ম", "platform");
+      const analysisIndex = findHeader("বিশ্লেষণ", "analysis");
+
+      table.querySelectorAll("tbody tr").forEach(tr => {
       const cells = tr.querySelectorAll("td");
       if (cells.length < 2) return;
-      const dateText = (cells[0].textContent || "").trim();
-      const platformText = (cells[1].textContent || "").trim().toLowerCase();
+      // Prefer header-driven indexes. Fallback keeps old table formats working.
+      const detectedDateIndex = dateIndex >= 0
+        ? dateIndex
+        : [...cells].findIndex(td => /\b20\d{2}[.\-\/]\d{1,2}[.\-\/]\d{1,2}\b/.test(td.textContent || ""));
+      const detectedPlatformIndex = platformIndex >= 0
+        ? platformIndex
+        : [...cells].findIndex(td => /whatsapp|telegram|messenger|facebook/i.test(td.textContent || ""));
+      const dateText = (cells[detectedDateIndex >= 0 ? detectedDateIndex : 0].textContent || "").trim();
+      const platformText = (cells[detectedPlatformIndex >= 0 ? detectedPlatformIndex : 1].textContent || "").trim().toLowerCase();
 
       // Platform color borders
       if (platformText.includes("whatsapp")) tr.classList.add("whatsapp-row");
@@ -158,11 +173,13 @@ PARISA MEMORY PORTAL এ আপনাকে স্বাগতম।
       const rowText = tr.textContent || "";
       if (/জাদু|ব্ল্যাক\s*ম্যাজিক|black\s*magic|তান্ত্রিক|কবিরাজ|হুজুর/i.test(rowText)) tr.classList.add("blackmagic-row");
 
-      // Phase labels: remove [Phase X] text from analysis column — colors shown via row CSS only
-      const lastCell = cells[cells.length - 1];
-      if (lastCell) {
-        lastCell.innerHTML = lastCell.innerHTML.replace(/\[Phase [A-D]\]/gi, "").trim();
+      // Phase labels: remove them from the actual analysis column.
+      const detectedAnalysisIndex = analysisIndex >= 0 ? analysisIndex : cells.length - 1;
+      const analysisCell = cells[detectedAnalysisIndex];
+      if (analysisCell) {
+        analysisCell.innerHTML = analysisCell.innerHTML.replace(/\[Phase [A-D]\]/gi, "").trim();
       }
+      });
     });
     // Remove numeric ref-num badges [1], [2] etc — user doesn't want reference numbers
     wrap.querySelectorAll("td, p, li").forEach(el => {

@@ -18,7 +18,7 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const publicDir = path.join(__dirname, "public");
 
 // ভার্সন ফরম্যাট: V-<n> — প্রতিটি নতুন আপডেটে n ঠিক ১ করে বাড়বে (package.json-এর semver থেকে স্বাধীন)
-const APP_VERSION = "V-24";
+const APP_VERSION = "V-25";
 
 const app = express();
 app.use(cors());
@@ -133,6 +133,42 @@ try {
 } catch(e) {
   console.warn("Global Timeline DB load error:", e.message);
 }
+
+// The database is the source of truth for platform/file coverage.
+// Keep this catalog derived from the actual records so the model never
+// relies on a stale, hand-written date range.
+function buildChatDataCatalog() {
+  const groups = new Map();
+  for (const msg of GLOBAL_TIMELINE) {
+    const platform = String(msg.platform || "অজানা");
+    const fileId = String(msg.file_id || "অজানা");
+    const timestamp = String(msg.timestamp || "");
+    const date = timestamp.slice(0, 10);
+    const key = `${platform}\u0000${fileId}`;
+    const current = groups.get(key) || {
+      platform, fileId, count: 0, min: date, max: date
+    };
+    current.count += 1;
+    if (date && (!current.min || date < current.min)) current.min = date;
+    if (date && (!current.max || date > current.max)) current.max = date;
+    groups.set(key, current);
+  }
+
+  const lines = [...groups.values()]
+    .sort((a, b) => `${a.platform}${a.fileId}`.localeCompare(`${b.platform}${b.fileId}`))
+    .map((g, index) =>
+      `${index + 1}. ${g.platform} — ${g.fileId} — ${g.min || "তারিখ নেই"} থেকে ${g.max || "তারিখ নেই"} — ${g.count}টি মেসেজ`
+    );
+
+  return lines.length
+    ? lines.join("\n")
+    : "চ্যাট ডাটাবেসে কোনো file record পাওয়া যায়নি।";
+}
+
+const CHAT_DATA_CATALOG = buildChatDataCatalog();
+const CHAT_DATA_FILE_COUNT = CHAT_DATA_CATALOG === "চ্যাট ডাটাবেসে কোনো file record পাওয়া যায়নি。"
+  ? 0
+  : CHAT_DATA_CATALOG.split("\n").length;
 
 // ─── Behavior Pattern Analysis — startup computation ──────────────
 let BEHAVIOR_STATS = "";
@@ -656,33 +692,16 @@ function buildSystemPrompt(userName = "আপনি", userQuery = "") {
 - Hafizur Rahman / Hafizur_Rahman = পারিসার বাবার নামের account — পারিসা নিজেই ব্যবহার করেছেন
 - Fatema_Jannat = পারিসার মায়ের নামের account — পারিসা নিজেই ব্যবহার করেছেন
 - Anisha / Anisha_Sister = পারিসার খালাতো বোন আনিশার সাথে কথোপকথন (রুবেল-পারিসার সরাসরি নয়)
-- বাকি সব ১১টি চ্যাট ফাইল = রুবেল ও পারিসার নিজেদের কথোপকথন (পারিসা বিভিন্ন নামের account থেকে)
 
-চ্যাট মেমোরি ডাটাবেসের ১২টি ফাইলের সম্পূর্ণ তালিকা ও পরিচয়:
-
-WhatsApp চ্যাট (৮টি):
-১. My_Wife — ৩১ আগস্ট ২০২৪ থেকে ৩০ অক্টোবর ২০২৫ — রুবেল ও পারিসার কথোপকথন (১৫,১৭৭ মেসেজ)
-২. Nusrat_Parisa — ১৯ মার্চ ২০২৪ থেকে ২৯ আগস্ট ২০২৪ — রুবেল ও পারিসার কথোপকথন (২৩,৬৪৪ মেসেজ)
-৩. Nusrat_Jahan_Parisa — ২৯ মে ২০২৪ থেকে ৩০ জুলাই ২০২৪ — রুবেল ও পারিসার কথোপকথন (১১,৮৭২ মেসেজ)
-৪. Parisa — ২৮ জুন ২০২৫ থেকে ২৯ জুন ২০২৫ — রুবেল ও পারিসার কথোপকথন (১০৮ মেসেজ)
-৫. PARISA_GP — ১ ডিসেম্বর ২০২৫ থেকে ১৩ ডিসেম্বর ২০২৫ — রুবেল ও পারিসার কথোপকথন (২৪৬ মেসেজ)
-৬. Hafizur_Rahman_Uncle — ১১ এপ্রিল ২০২৪ থেকে ১৪ এপ্রিল ২০২৪ — পারিসার বাবার নামের account, পারিসা ব্যবহার করেছেন (২০ মেসেজ)
-৭. Anisha_Sister — ১৭ জানুয়ারি ২০২৬ থেকে ৬ ফেব্রুয়ারি ২০২৬ — পারিসার খালাতো বোন আনিশার সাথে (১১৩ মেসেজ)
-৮. Tanha_Islam (WhatsApp) — রুবেল ও পারিসার কথোপকথন
-
-Facebook Messenger চ্যাট (৩টি):
-৯. Fatema_Jannat — ২৯ মার্চ ২০২৪ থেকে ৯ মে ২০২৪ — পারিসার মায়ের নামের account, পারিসা ব্যবহার করেছেন (১২৩ মেসেজ)
-১০. Nusrat_Janan_Parisa — ২৫ আগস্ট ২০২৪ থেকে ১৯ সেপ্টেম্বর ২০২৪ — রুবেল ও পারিসার কথোপকথন (৭,৫০৫ মেসেজ)
-১১. Hafizur_Rahman — ২৭ জানুয়ারি ২০২৬ থেকে ১৫ এপ্রিল ২০২৬ — পারিসার বাবার নামের account, পারিসা ব্যবহার করেছেন (৪৩৩ মেসেজ)
-
-Telegram চ্যাট (১টি):
-১২. telegram_chat — ৪ জানুয়ারি ২০২৫ থেকে ৬ এপ্রিল ২০২৬ — রুবেল ও পারিসার কথোপকথন (৯,১৬৬ মেসেজ)
+চ্যাট মেমোরি ডাটাবেসে বর্তমানে থাকা platform/file ও date range:
+${CHAT_DATA_CATALOG}
+উপরের তালিকা সরাসরি chat_database-এর records থেকে তৈরি। কোনো পুরোনো অনুমান বা hard-coded date range ব্যবহার করবে না।
 
 গুরুত্বপূর্ণ পার্থক্য — চ্যাট হিস্টরি ≠ মেমোরি ড্যাশবোর্ড ফোল্ডার:
-- উপরের ১২টি হলো চ্যাট হিস্টরি ফাইল (ডেটাবেসে সংরক্ষিত)
+- উপরের ${CHAT_DATA_FILE_COUNT}টি হলো chat history file group (ডেটাবেসে সংরক্ষিত)
 - মেমোরি ড্যাশবোর্ডে আলাদা ফোল্ডার সিস্টেম আছে (Google Drive-এ)
 - কেউ "ফোল্ডার কয়টা" জিজ্ঞাসা করলে Drive-এর ফোল্ডার বলবে — চ্যাট ফাইলের সংখ্যা নয়
-- কেউ "চ্যাট হিস্টরি কয়টা" জিজ্ঞাসা করলে ১২টি ফাইলের কথা বলবে
+- কেউ "চ্যাট হিস্টরি কয়টা" জিজ্ঞাসা করলে উপরের প্রকৃত ${CHAT_DATA_FILE_COUNT}টি file group-এর কথা বলবে
 
 তারিখ ভিত্তিক তথ্য খোঁজার নিয়ম:
 - নির্দিষ্ট তারিখ চাইলে ডেটাবেস থেকে সেই তারিখের মেসেজ দেখাবে
@@ -751,13 +770,14 @@ RULE 5 — screenshot content:
 রুবেল ও পারিসা — উভয়ের মেসেজ table-এ দেখাবে।
 মেসেজ হুবহু database থেকে — এক অক্ষরও বদলাবে না।
 Banglish/Bengali/English যেভাবে আছে সেভাবে — অনুবাদ সম্পূর্ণ নিষিদ্ধ।
+প্রতিটি message cell DATABASE QUERY RESULT-এর exact message text থেকে সরাসরি copy করবে; বানান ঠিক করবে না, punctuation বদলাবে না, summary লিখবে না এবং message কেটে দেবে না।
 প্রেরকের নাম database-এর file/sender field-এ যেভাবে আছে হুবহু সেইভাবে লিখবে।
 ৫-১০টি মেসেজ। বিশ্লেষণ column-এ সংক্ষিপ্ত তদন্তকারী মন্তব্য — কোনো Phase label লিখবে না।
 Table cell-এর text word-wrap হবে — লম্বা message নিচের line-এ যাবে, table ডানে-বামে বড় হবে না এবং চ্যাট হিস্ট্রি দেখানোর সময় পুরো মেসেজ সেন্ড করবে অর্ধেক মেসেজ দিয়ে থেমে যাবে না।
 
 | প্রেরক | মেসেজ | বিশ্লেষণ | প্ল্যাটফর্ম | তারিখ ও সময় |
 |---|---|---|---|---|
-| (timestamp হুবহু) | (platform হুবহু) | (sender হুবহু) | (message হুবহু — কোনো পরিবর্তন নেই) | সংক্ষিপ্ত বাংলা বিশ্লেষণ |
+| (sender হুবহু) | (message হুবহু — কোনো পরিবর্তন নেই) | সংক্ষিপ্ত বাংলা বিশ্লেষণ | (platform হুবহু) | (timestamp হুবহু) |
 
 ধাপ ৪ — SCREENSHOT (প্রাসঙ্গিক ছবি থাকলে):
 ### সংযুক্ত ডিজিটাল প্রমাণ
@@ -1213,7 +1233,7 @@ function mount(prefix) {
       const body = {
         systemInstruction: { role: "system", parts: [{ text: sys }] },
         contents,
-        generationConfig: { temperature: 0.15, maxOutputTokens: 2048 },
+        generationConfig: { temperature: 0.15, maxOutputTokens: 4096 },
       };
       const { reply, provider } = await chatWithFallback(body, !!image);
       const rawReply = reply || "দুঃখিত, এই মুহূর্তে উত্তর দিতে পারছি না।";
