@@ -1,0 +1,1 @@
+- [GitHub remote authentication](github-remote-auth.md) — this workspace may require secret-backed askpass for GitHub pushes instead of the default remote credential flow.
