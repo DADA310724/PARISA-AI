@@ -18,7 +18,7 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const publicDir = path.join(__dirname, "public");
 
 // ভার্সন ফরম্যাট: V-<n> — প্রতিটি নতুন আপডেটে n ঠিক ১ করে বাড়বে (package.json-এর semver থেকে স্বাধীন)
-const APP_VERSION = "V-26";
+const APP_VERSION = "V-27";
 
 const app = express();
 app.use(cors());
@@ -361,17 +361,26 @@ function searchChatDBRecords(query) {
   if (!targetDate) {
     const monthNames = Object.keys(MONTH_MAP).sort((a, b) => b.length - a.length)
       .map(name => name.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")).join("|");
-    const dayFirst = q.match(new RegExp(`(?:^|\\s)(\\d{1,2})\\s+(${monthNames})(?:\\s+(20\\d{2}))?(?=\\s|$)`, "i"));
-    const monthFirst = q.match(new RegExp(`(?:^|\\s)(${monthNames})\\s+(\\d{1,2})(?:\\s+(20\\d{2}))?(?=\\s|$)`, "i"));
-    const wordDate = dayFirst || monthFirst;
-    if (wordDate) {
-      const day = dayFirst ? wordDate[1] : wordDate[2];
-      const monthName = dayFirst ? wordDate[2].toLowerCase() : wordDate[1].toLowerCase();
-      const year = dayFirst ? wordDate[3] : wordDate[3];
-      const month = MONTH_MAP[monthName];
-      if (month) targetDate = wordDate[3]
-        ? `${year}-${month}-${day.padStart(2, "0")}`
-        : `-${month}-${day.padStart(2, "0")}`;
+    const yearFirst = q.match(new RegExp(
+      `(?:^|\\s)(20\\d{2})\\s+সাল(?:ের)?\\s+(\\d{1,2})\\s+(${monthNames})(?:ের|এর|তারিখে)?(?=\\s|$)`,
+      "i"
+    ));
+    if (yearFirst) {
+      const month = MONTH_MAP[yearFirst[3].toLowerCase()];
+      if (month) targetDate = `${yearFirst[1]}-${month}-${yearFirst[2].padStart(2, "0")}`;
+    } else {
+      const dayFirst = q.match(new RegExp(`(?:^|\\s)(\\d{1,2})\\s+(${monthNames})(?:ের|এর|তারিখে)?(?:\\s+(20\\d{2}))?(?=\\s|$)`, "i"));
+      const monthFirst = q.match(new RegExp(`(?:^|\\s)(${monthNames})\\s+(\\d{1,2})(?:\\s+(20\\d{2}))?(?=\\s|$)`, "i"));
+      const wordDate = dayFirst || monthFirst;
+      if (wordDate) {
+        const day = dayFirst ? wordDate[1] : wordDate[2];
+        const monthName = dayFirst ? wordDate[2].toLowerCase() : wordDate[1].toLowerCase();
+        const year = wordDate[3];
+        const month = MONTH_MAP[monthName];
+        if (month) targetDate = year
+          ? `${year}-${month}-${day.padStart(2, "0")}`
+          : `-${month}-${day.padStart(2, "0")}`;
+      }
     }
   }
   if (!targetDate) {
@@ -385,18 +394,25 @@ function searchChatDBRecords(query) {
   }
   const yearMatch = q.match(/\b(20[2-9]\d)\b/);
   const targetYear = yearMatch ? yearMatch[1] : null;
+  // “২০২৫ সালের ১০ এপ্রিল” may be recognized first as day+month.
+  // If a year is also present, combine both parts into one exact date
+  // instead of accidentally searching every year's 10 April.
+  if (targetDate?.startsWith("-") && targetYear) {
+    targetDate = `${targetYear}${targetDate}`;
+  }
 
   const stopWords = new Set([
     "কথা","বলে","বলো","দেখা","দেখো","থেকে","হয়ে","হয়েছে","করে","যাবে","আমাকে","আমার","তোমার",
-    "আছে","ছিল","করছে","কিন্তু","তখন","এবং","কেন","কি","কী","কোন","কোনো","চ্যাট","হিস্টরি",
+    "আছে","ছিল","করছে","কিন্তু","তখন","এবং","কেন","কি","কী","কোন","কোনো","চ্যাট","হিস্টরি","হিস্ট্রি","হিস্টোরি",
     "মেসেজ","বার্তা","দেখাও","দাও","বলো","দেখতে","চাই","চায়","করো","কর","please","show","chat",
     "message","history","messages","conversation","দিয়ে","দিয়ে","সম্পর্কে","জন্য","এর","থেকে",
     "এখন","তারপর","এরপর","উপরের","ওই","সেগুলো","এগুলো","আগের","এইগুলো","বিশ্লেষণ","ব্যাখ্যা",
     "analyze","analyse","explain","আরও","বিস্তারিত","on","for","from","about","the","and","of",
-    "পারিসার","পারিসার","নুসরাতের","রুবেলের",
+    "পারিসার","পারিসার","নুসরাতের","রুবেলের","সাল","সালের","তারিখ","তারিখে","দিনে","দিনের",
   ]);
   const removableTokens = new Set([
     ...Object.keys(MONTH_MAP),
+    ...Object.keys(MONTH_MAP).map(month => `${month}ের`),
     ...Object.keys(FILE_ALIAS).flatMap(alias => alias.split(/\s+/)),
     "whatsapp","telegram","messenger","facebook","হোয়াটসঅ্যাপ","টেলিগ্রাম","ফেসবুক","মেসেঞ্জার",
     "rubel","kalachan","kalachand","রুবেল","কালাচাঁন","কালাচাঁদ","parisa","পারিসা","nusrat","নুসরাত",
@@ -410,7 +426,7 @@ function searchChatDBRecords(query) {
 
   const historyIntent = Boolean(
     targetDate || targetMonth || targetYear || targetFile || targetPlatform || targetSender ||
-    /চ্যাট|হিস্টরি|মেসেজ|বার্তা|উদ্ধৃতি|প্রমাণ|কথোপকথন|conversation|message|history|দেখাও|দেখো|show|search|খুঁজ/i.test(q)
+    /চ্যাট|হিস্টরি|হিস্ট্রি|হিস্টোরি|মেসেজ|বার্তা|উদ্ধৃতি|প্রমাণ|কথোপকথন|conversation|message|history|দেখাও|দেখো|show|search|খুঁজ/i.test(q)
   );
   const shouldSearch = historyIntent || keywords.length > 0;
   if (!shouldSearch) return { rows: [], isHistoryQuery: false };
