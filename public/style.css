@@ -1070,8 +1070,7 @@ textarea, input, select { font-family: inherit; color: inherit; }
 
 /* ══ Table scroll wrapper ════════════════════════════════════════════ */
 .msg .tbl-wrap {
-  overflow-x: auto;
-  -webkit-overflow-scrolling: touch;
+  overflow: visible;
   margin: 10px 0;
   border-radius: 10px;
   border: 1px solid rgba(95,232,255,.12);
@@ -1081,8 +1080,8 @@ textarea, input, select { font-family: inherit; color: inherit; }
 /* ══ Investigative table — সব কলামে text সঠিকভাবে দেখাবে ═══════════ */
 .msg table {
   border-collapse: collapse;
-  table-layout: auto;        /* ব্রাউজার নিজে ঠিক করবে */
-  min-width: 520px;          /* ছোট স্ক্রিনে horizontal scroll */
+  table-layout: fixed;       /* screen-এর ভেতরে থাকবে, message নিচে wrap হবে */
+  min-width: 0;
   width: 100%;
   font-size: 12px; margin: 0;
   background: rgba(0,15,22,.6);
@@ -1095,7 +1094,8 @@ textarea, input, select { font-family: inherit; color: inherit; }
   text-align: left; font-size: 11px;
   letter-spacing: .03em; text-transform: uppercase;
   border-bottom: 1px solid rgba(95,232,255,.20);
-  white-space: nowrap;
+  white-space: normal;
+  overflow-wrap: anywhere;
 }
 .msg table td {
   padding: 7px 9px;
@@ -1106,30 +1106,29 @@ textarea, input, select { font-family: inherit; color: inherit; }
   font-size: 12px;
   overflow-wrap: break-word;
 }
-/* তারিখ কলাম — শুধু এটাতেই nowrap, বাকিগুলো wrap করবে */
+/* Sender column */
 .msg table td:nth-child(1) {
-  white-space: nowrap; font-size: 11px;
-  color: rgba(180,240,250,.72); width: 95px;
+  color: #00e5b4; font-weight: 600; width: 15%;
 }
-/* প্ল্যাটফর্ম কলাম */
+/* Message column — largest flexible column */
 .msg table td:nth-child(2) {
-  font-weight: 600; font-size: 11px;
-  white-space: nowrap; width: 70px;
+  color: #e8f8ff; font-style: italic; width: 35%;
+  white-space: pre-wrap; overflow-wrap: anywhere;
 }
-/* প্রেরক কলাম */
+/* Analysis column */
 .msg table td:nth-child(3) {
-  color: #00e5b4; font-weight: 600;
-  white-space: nowrap; width: 65px;
+  color: #c8e8f4; font-size: 11.5px; width: 20%;
+  overflow-wrap: anywhere;
 }
-/* মেসেজ কলাম — বড় এবং wrap */
+/* Platform column */
 .msg table td:nth-child(4) {
-  color: #e8f8ff; font-style: italic;
-  min-width: 130px; white-space: pre-wrap;
+  font-weight: 600; font-size: 11px; width: 13%;
+  overflow-wrap: anywhere;
 }
-/* বিশ্লেষণ কলাম */
+/* Timestamp column */
 .msg table td:nth-child(5) {
-  color: #c8e8f4; font-size: 11.5px;
-  min-width: 110px;
+  color: rgba(180,240,250,.72); font-size: 11px; width: 17%;
+  overflow-wrap: anywhere;
 }
 .msg table tr:hover td { background: rgba(95,232,255,.05); }
 .msg table tr:last-child td { border-bottom: none; }

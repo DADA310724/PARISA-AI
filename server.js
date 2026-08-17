@@ -18,7 +18,7 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const publicDir = path.join(__dirname, "public");
 
 // ভার্সন ফরম্যাট: V-<n> — প্রতিটি নতুন আপডেটে n ঠিক ১ করে বাড়বে (package.json-এর semver থেকে স্বাধীন)
-const APP_VERSION = "V-25";
+const APP_VERSION = "V-26";
 
 const app = express();
 app.use(cors());
@@ -257,24 +257,61 @@ function computeBehaviorStats() {
 // DB লোডের পরেই compute করো
 computeBehaviorStats();
 
-function searchChatDB(query) {
-  if (!GLOBAL_TIMELINE.length) return "";
+function normalizeSearchText(value) {
+  return String(value || "")
+    .toLocaleLowerCase("bn-BD")
+    .normalize("NFKC")
+    .replace(/ওয়/g, "ওয়")
+    .replace(/হোয়/g, "হোয়")
+    .replace(/[“”‘’`]/g, "")
+    .replace(/\s+/g, " ")
+    .trim();
+}
 
-  // বাংলা সংখ্যা → আরবি সংখ্যা
-  const bnToAr = s => s.replace(/[০-৯]/g, d => String("০১২৩৪৫৬৭৮৯".indexOf(d)));
-  const qRaw = bnToAr(query);
-  const q = qRaw.toLowerCase();
+function isGreetingOnly(value) {
+  const q = normalizeSearchText(value)
+    .replace(/[!?।,.،]+/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+  return /^(hi|hello|hey|হাই|হ্যালো|হেলো|সালাম|আসসালামু আলাইকুম|আস্সালামু আলাইকুম|আসসালামুয়ালাইকুম|আস্সালামুয়ালাইকুম|ওয়ালাইকুম সালাম|assalamu alaikum|assalamu walaikum|assalamualaikum|assalam o alaikum|ওয়ালাইকুমুস সালাম)$/.test(q);
+}
 
+function isCapabilityQuestion(value) {
+  const q = normalizeSearchText(value).replace(/[!?।,.،]+/g, " ").replace(/\s+/g, " ").trim();
+  return /^(তুমি|আপনি)?\s*(কি|কী)\s*(কি|কী)?\s*(পারো|পারি|করতে পারো|করতে পারেন|করতে পারি)\s*$/.test(q)
+    || /^(তুমি|আপনি)\s+(কি|কী)\s+(কি|কী)\s+(করতে\s+)?পারো\s*$/.test(q)
+    || /^(what can you do|what are you capable of|your capabilities)$/.test(q);
+}
+
+function buildSearchContext(messages = []) {
+  const users = messages
+    .filter(m => m && m.role === "user" && String(m.text || "").trim())
+    .map(m => String(m.text).trim());
+  const current = users.at(-1) || "";
+  if (!current || isGreetingOnly(current)) return current;
+
+  // Follow-up questions such as “এখন বিশ্লেষণ দাও” inherit the previous
+  // date/platform/file request; unrelated new questions do not.
+  const isFollowUp = /^(এখন|তারপর|এরপর|উপরের|ওই|সেগুলো|এগুলো|আগের|এইগুলো|these|those|above|them|এটার|ওটার)\b/i.test(current)
+    || /^(বিশ্লেষণ|ব্যাখ্যা|analy[sz]e|explain|আরও|বিস্তারিত)\s*(দাও|করো|কর|বল|বলো)?\s*$/i.test(current);
+  return isFollowUp ? users.slice(-2).join(" ") : current;
+}
+
+function searchChatDBRecords(query) {
+  if (!GLOBAL_TIMELINE.length || !String(query || "").trim() || isGreetingOnly(query) || isCapabilityQuestion(query)) {
+    return { rows: [], isHistoryQuery: false };
+  }
+
+  const bnToAr = s => String(s).replace(/[০-৯]/g, d => String("০১২৩৪৫৬৭৮৯".indexOf(d)));
+  const q = normalizeSearchText(bnToAr(query))
+    .replace(/[،,]/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
   const MONTH_MAP = {
-    jan:"01",feb:"02",mar:"03",apr:"04",may:"05",jun:"06",
-    jul:"07",aug:"08",sep:"09",oct:"10",nov:"11",dec:"12",
-    january:"01",february:"02",march:"03",april:"04",june:"06",
-    july:"07",august:"08",september:"09",october:"10",november:"11",december:"12",
-    জানুয়ারি:"01",ফেব্রুয়ারি:"02",মার্চ:"03",এপ্রিল:"04",মে:"05",জুন:"06",
-    জুলাই:"07",আগস্ট:"08",সেপ্টেম্বর:"09",অক্টোবর:"10",নভেম্বর:"11",ডিসেম্বর:"12",
+    jan:"01",feb:"02",mar:"03",apr:"04",may:"05",jun:"06",jul:"07",aug:"08",sep:"09",oct:"10",nov:"11",dec:"12",
+    january:"01",february:"02",march:"03",april:"04",may:"05",june:"06",july:"07",august:"08",september:"09",october:"10",november:"11",december:"12",
+    জানুয়ারি:"01",ফেব্রুয়ারি:"02",মার্চ:"03",এপ্রিল:"04",মে:"05",জুন:"06",জুলাই:"07",আগস্ট:"08",সেপ্টেম্বর:"09",অক্টোবর:"10",নভেম্বর:"11",ডিসেম্বর:"12",
   };
-
-  // file_id alias mapping
   const FILE_ALIAS = {
     "my wife":"My_Wife","মাই ওয়াইফ":"My_Wife","wife":"My_Wife",
     "nusrat parisa":"Nusrat_Parisa","নুসরাত পারিসা":"Nusrat_Parisa",
@@ -289,121 +326,189 @@ function searchChatDB(query) {
     "tanha":"Tanha_Islam","তানহা":"Tanha_Islam",
     "parisa gp":"PARISA_GP","পারিসা জিপি":"PARISA_GP",
     "telegram":"telegram_chat","টেলিগ্রাম":"telegram_chat",
-    "parisa":"Parisa","পারিসা":"Parisa",
+    "parisa file":"Parisa","পারিসা ফাইল":"Parisa",
   };
-
-  // Platform filter
-  let targetPlatform = null;
-  if (q.includes("whatsapp") || q.includes("হোয়াটসঅ্যাপ")) targetPlatform = "WhatsApp";
-  else if (q.includes("telegram") || q.includes("টেলিগ্রাম")) targetPlatform = "Telegram";
-  else if (q.includes("messenger") || q.includes("facebook") || q.includes("ফেসবুক") || q.includes("মেসেঞ্জার")) targetPlatform = "Facebook Messenger";
-
-  // File filter — দীর্ঘ alias আগে match করবে
+  const aliases = Object.entries(FILE_ALIAS).sort((a, b) => b[0].length - a[0].length);
   let targetFile = null;
-  const sortedAliases = Object.entries(FILE_ALIAS).sort((a,b) => b[0].length - a[0].length);
-  for (const [alias, id] of sortedAliases) {
+  for (const [alias, id] of aliases) {
     if (q.includes(alias)) { targetFile = id; break; }
   }
+  if (!targetFile && /(?:\bfile\b|\bchat\b|চ্যাট|ফাইল|হিস্টরি)/i.test(q)
+      && /(?:\bparisa\b|পারিসা)/i.test(q)) {
+    targetFile = "Parisa";
+  }
 
-  // তারিখ খোঁজা — একাধিক format support
+  let targetPlatform = null;
+  if (/\bwhatsapp\b|হোয়াটসঅ্যাপ/i.test(q)) targetPlatform = "whatsapp";
+  else if (/\btelegram\b|টেলিগ্রাম/i.test(q)) targetPlatform = "telegram";
+  else if (/\bmessenger\b|\bfacebook\b|ফেসবুক|মেসেঞ্জার/i.test(q)) targetPlatform = "facebook messenger";
+
+  let targetSender = null;
+  if (/\b(rubel|kalachan|kalachand)\b|রুবেল|কালাচাঁন|কালাচাঁদ/i.test(q)) targetSender = "rubel";
+  else if (/পারিসার\s+(মেসেজ|কথা|বার্তা)|\bfrom\s+(parisa|nusrat)\b|পারিসা\s+কি\s+বলেছে|নুসরাত\s+কি\s+বলেছে|প্রেরক\s*:?\s*(parisa|পারিসা)/i.test(q)) targetSender = "parisa";
+
   let targetDate = null;
-  let targetYear = null;
-  let targetMonth = null; // শুধু মাস দিলে (কোনো তারিখ নেই)
-
-  // ISO format: 2025-01-04
+  let targetMonth = null;
   const isoMatch = q.match(/(\d{4})[.\-\/](\d{1,2})[.\-\/](\d{1,2})/);
-  if (isoMatch) {
-    targetDate = `${isoMatch[1]}-${isoMatch[2].padStart(2,"0")}-${isoMatch[3].padStart(2,"0")}`;
-  }
-
-  // DD/MM/YYYY বা DD-MM-YYYY
+  if (isoMatch) targetDate = `${isoMatch[1]}-${isoMatch[2].padStart(2, "0")}-${isoMatch[3].padStart(2, "0")}`;
   if (!targetDate) {
-    const dmyMatch = q.match(/(\d{1,2})[\/\-\.](\d{1,2})[\/\-\.](\d{2,4})/);
-    if (dmyMatch) {
-      const yr = dmyMatch[3].length === 2 ? "20"+dmyMatch[3] : dmyMatch[3];
-      targetDate = `${yr}-${dmyMatch[2].padStart(2,"0")}-${dmyMatch[1].padStart(2,"0")}`;
+    const dmy = q.match(/(\d{1,2})[\/\-\.](\d{1,2})[\/\-\.](\d{2,4})/);
+    if (dmy) {
+      const year = dmy[3].length === 2 ? `20${dmy[3]}` : dmy[3];
+      targetDate = `${year}-${dmy[2].padStart(2, "0")}-${dmy[1].padStart(2, "0")}`;
     }
   }
-
-  // "৪ জানুয়ারি ২০২৫" বা "4 january 2025" বা "4 জানুয়ারি"
   if (!targetDate) {
-    const dateWordPat = /(\d{1,2})\s+([\u0980-\u09FFa-zA-Z]+)(?:\s+(\d{4}))?/i;
-    const dm = q.match(dateWordPat);
-    if (dm) {
-      const mon = MONTH_MAP[dm[2].toLowerCase()];
-      if (mon) {
-        const dd = dm[1].padStart(2,"0");
-        if (dm[3]) {
-          targetDate = `${dm[3]}-${mon}-${dd}`;
-        } else {
-          // শুধু day+month — year ছাড়া, সব বছর খুঁজবে
-          targetDate = `-${mon}-${dd}`;
-        }
-      }
+    const monthNames = Object.keys(MONTH_MAP).sort((a, b) => b.length - a.length)
+      .map(name => name.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")).join("|");
+    const dayFirst = q.match(new RegExp(`(?:^|\\s)(\\d{1,2})\\s+(${monthNames})(?:\\s+(20\\d{2}))?(?=\\s|$)`, "i"));
+    const monthFirst = q.match(new RegExp(`(?:^|\\s)(${monthNames})\\s+(\\d{1,2})(?:\\s+(20\\d{2}))?(?=\\s|$)`, "i"));
+    const wordDate = dayFirst || monthFirst;
+    if (wordDate) {
+      const day = dayFirst ? wordDate[1] : wordDate[2];
+      const monthName = dayFirst ? wordDate[2].toLowerCase() : wordDate[1].toLowerCase();
+      const year = dayFirst ? wordDate[3] : wordDate[3];
+      const month = MONTH_MAP[monthName];
+      if (month) targetDate = wordDate[3]
+        ? `${year}-${month}-${day.padStart(2, "0")}`
+        : `-${month}-${day.padStart(2, "0")}`;
     }
   }
-
-  // শুধু মাস + বছর: "জানুয়ারি ২০২৫" বা "january 2025"
   if (!targetDate) {
-    for (const [monName, monNum] of Object.entries(MONTH_MAP)) {
-      if (q.includes(monName)) {
-        const yrM = q.match(/\b(202[0-9])\b/);
-        if (yrM) {
-          targetMonth = `${yrM[1]}-${monNum}`; // YYYY-MM
-        }
+    for (const [monthName, monthNumber] of Object.entries(MONTH_MAP).sort((a, b) => b[0].length - a[0].length)) {
+      if (new RegExp(`(?:^|\\s)${monthName}(?=\\s|$)`, "i").test(q)) {
+        const year = q.match(/\b(20[2-9]\d)\b/);
+        if (year) targetMonth = `${year[1]}-${monthNumber}`;
         break;
       }
     }
   }
+  const yearMatch = q.match(/\b(20[2-9]\d)\b/);
+  const targetYear = yearMatch ? yearMatch[1] : null;
 
-  // বছর
-  const yrMatch = q.match(/\b(202[0-9])\b/);
-  if (yrMatch) targetYear = yrMatch[1];
+  const stopWords = new Set([
+    "কথা","বলে","বলো","দেখা","দেখো","থেকে","হয়ে","হয়েছে","করে","যাবে","আমাকে","আমার","তোমার",
+    "আছে","ছিল","করছে","কিন্তু","তখন","এবং","কেন","কি","কী","কোন","কোনো","চ্যাট","হিস্টরি",
+    "মেসেজ","বার্তা","দেখাও","দাও","বলো","দেখতে","চাই","চায়","করো","কর","please","show","chat",
+    "message","history","messages","conversation","দিয়ে","দিয়ে","সম্পর্কে","জন্য","এর","থেকে",
+    "এখন","তারপর","এরপর","উপরের","ওই","সেগুলো","এগুলো","আগের","এইগুলো","বিশ্লেষণ","ব্যাখ্যা",
+    "analyze","analyse","explain","আরও","বিস্তারিত","on","for","from","about","the","and","of",
+    "পারিসার","পারিসার","নুসরাতের","রুবেলের",
+  ]);
+  const removableTokens = new Set([
+    ...Object.keys(MONTH_MAP),
+    ...Object.keys(FILE_ALIAS).flatMap(alias => alias.split(/\s+/)),
+    "whatsapp","telegram","messenger","facebook","হোয়াটসঅ্যাপ","টেলিগ্রাম","ফেসবুক","মেসেঞ্জার",
+    "rubel","kalachan","kalachand","রুবেল","কালাচাঁন","কালাচাঁদ","parisa","পারিসা","nusrat","নুসরাত",
+  ]);
+  const removable = new Set([
+    ...removableTokens,
+  ]);
+  const keywords = q.split(/\s+/)
+    .map(w => w.replace(/^[.,!?।،]+|[.,!?।،]+$/g, ""))
+    .filter(w => w.length > 2 && !stopWords.has(w) && !removable.has(w) && !/\d/.test(w));
 
-  const stopWords = new Set(["কথা","বলে","বলো","দেখা","দেখো","থেকে","হয়ে","করে","যাবে",
-    "আমাকে","আমার","তোমার","আছে","ছিল","করছে","কিন্তু","তখন","এবং","কেন","কি",
-    "চ্যাট","হিস্টরি","মেসেজ","দেখাও","দাও","বলো","show","chat","message"]);
-  const keywords = q.split(/\s+/).filter(w => w.length > 2 && !stopWords.has(w));
+  const historyIntent = Boolean(
+    targetDate || targetMonth || targetYear || targetFile || targetPlatform || targetSender ||
+    /চ্যাট|হিস্টরি|মেসেজ|বার্তা|উদ্ধৃতি|প্রমাণ|কথোপকথন|conversation|message|history|দেখাও|দেখো|show|search|খুঁজ/i.test(q)
+  );
+  const shouldSearch = historyIntent || keywords.length > 0;
+  if (!shouldSearch) return { rows: [], isHistoryQuery: false };
 
   const found = [];
   for (const msg of GLOBAL_TIMELINE) {
-    const ts       = msg.timestamp       || "";
-    const txt      = msg.message         || "";
-    const snd      = msg.sender          || "";
-    const fileId   = msg.file_id         || "";
-    const platform = msg.platform        || "";
-    const sndOrig  = msg.sender_original || "";
-    const txtL     = txt.toLowerCase();
+    const ts = String(msg.timestamp || "");
+    const txt = String(msg.message || "");
+    const snd = String(msg.sender || "");
+    const fileId = String(msg.file_id || "");
+    const platform = String(msg.platform || "");
+    const sndOrig = String(msg.sender_original || "");
+    const txtL = normalizeSearchText(txt);
+    const platformL = normalizeSearchText(platform);
 
-    if (targetPlatform && platform !== targetPlatform) continue;
-    if (targetFile && fileId !== targetFile) continue;
-
-    let matched = false;
-
-    if (targetDate) {
-      if (targetDate.startsWith("-")) {
-        // শুধু MM-DD match, সব বছর
-        matched = ts.slice(4).startsWith(targetDate); // ts = "YYYY-MM-DD HH:mm:ss"
-      } else {
-        matched = ts.startsWith(targetDate);
-      }
-    } else if (targetMonth) {
-      // YYYY-MM prefix match
-      matched = ts.startsWith(targetMonth);
-    } else if (keywords.length) {
-      matched = keywords.some(kw => txtL.includes(kw));
+    if (targetPlatform && platformL !== targetPlatform) continue;
+    if (targetFile && normalizeSearchText(fileId) !== normalizeSearchText(targetFile)) continue;
+    if (targetSender) {
+      const senderL = normalizeSearchText(`${snd} ${sndOrig}`);
+      const isRubel = /rubel|kalachan|kalachand|রুবেল|কালাচাঁন|কালাচাঁদ/.test(senderL);
+      const isParisa = /parisa|nusrat|পারিসা|নুসরাত/.test(senderL);
+      if (targetSender === "rubel" && !isRubel) continue;
+      if (targetSender === "parisa" && !isParisa) continue;
     }
+    if (targetDate) {
+      const dateMatch = targetDate.startsWith("-")
+        ? ts.slice(4).startsWith(targetDate)
+        : ts.startsWith(targetDate);
+      if (!dateMatch) continue;
+    } else if (targetMonth && !ts.startsWith(targetMonth)) continue;
+    else if (targetYear && !ts.startsWith(targetYear)) continue;
+    if (keywords.length && !keywords.every(keyword => txtL.includes(keyword))) continue;
 
-    if (matched) found.push({ ts, snd, sndOrig, platform, fileId, txt });
+    let score = 0;
+    for (const keyword of keywords) {
+      if (txtL.includes(keyword)) score += 1 + (txtL.split(keyword).length - 1) * 0.05;
+    }
+    if (keywords.length && txtL.includes(keywords.join(" "))) score += 2;
+    if (targetDate || targetMonth || targetYear) score += 2;
+    found.push({
+      ts, snd, sndOrig, platform, fileId, txt,
+      globalId: msg.global_id ?? null, score,
+    });
+  }
+  if (!found.length) return { rows: [], isHistoryQuery: historyIntent };
+
+  const hasKeyword = keywords.length > 0;
+  found.sort((a, b) => hasKeyword
+    ? (b.score - a.score) || a.ts.localeCompare(b.ts)
+    : a.ts.localeCompare(b.ts));
+  // A specific day is an exact archive request. The database currently has
+  // at most 1,220 rows on one day, so keep enough headroom to avoid silently
+  // dropping valid rows. Month/year searches remain bounded for memory.
+  const limit = targetDate ? 2000 : (targetMonth || targetYear) ? 2000 : 100;
+  return { rows: found.slice(0, limit), isHistoryQuery: historyIntent };
+}
+
+function greetingReply(query, isFirstUserMessage) {
+  if (!isFirstUserMessage) {
+    return /salam|সালাম|ওয়ালাইকুম|ওয়ালাইকুম/i.test(normalizeSearchText(query))
+      ? "ওয়ালাইকুমুস সালাম। বলুন, কী জানতে চান?"
+      : "হ্যালো। বলুন, কী জানতে চান?";
   }
 
-  if (!found.length) return "";
+  const opening = /salam|সালাম|ওয়ালাইকুম|ওয়ালাইকুম/i.test(normalizeSearchText(query))
+    ? "ওয়া আলাইকুমুস সালাম।"
+    : "হ্যালো।";
+  return `${opening}
+PARISA MEMORY PORTAL-এ আপনাকে স্বাগতম।
 
-  // তারিখ/মাস ভিত্তিক query-তে বেশি results, keyword-এ কম
-  const limit = (targetDate || targetMonth) ? 400 : 100;
-  return found.slice(0, limit)
-    .map(m => `[${m.platform}][${m.fileId}][${m.ts}] ${m.snd}(${m.sndOrig}): ${m.txt}`)
-    .join("\n");
+আমি পারিসা ও রুবেলের সম্পর্কের ইতিহাস, নির্দিষ্ট তারিখের আসল chat history, ছবি ও screenshot বিশ্লেষণ, সম্পর্কের timeline এবং বাংলাদেশের আইন ও ইসলামিক দৃষ্টিকোণ থেকে তথ্য ব্যাখ্যা করতে পারি।
+
+আপনি কী জানতে চান, বলুন।`;
+}
+
+function capabilityReply() {
+  return `আমি যা করতে পারি:
+• নির্দিষ্ট তারিখ, platform, file বা keyword দিয়ে আসল chat history খুঁজে দেখাতে পারি
+• chat message, ছবি ও screenshot বিশ্লেষণ করতে পারি
+• পারিসা ও রুবেলের সম্পর্কের timeline এবং আচরণগত পরিবর্তন ব্যাখ্যা করতে পারি
+• বাংলাদেশের বিবাহ ও পারিবারিক আইন এবং ইসলামিক দৃষ্টিকোণ থেকে তথ্য দিতে পারি
+
+আপনি কী জানতে চান, বলুন।`;
+}
+
+function formatChatDBResults(rows) {
+  return rows.map(m =>
+    `[${m.platform}][${m.fileId}][${m.ts}] ${m.snd}(${m.sndOrig}): ${m.txt}`
+  ).join("\n");
+}
+
+function searchChatDB(query) {
+  return formatChatDBResults(searchChatDBRecords(query).rows);
+}
+
+function isChatHistoryRequest(query) {
+  const q = normalizeSearchText(query);
+  return /\b20[2-9]\d\b|whatsapp|telegram|messenger|facebook|তারিখ|দিন|মাস|বছর|চ্যাট|হিস্টরি|মেসেজ|বার্তা|উদ্ধৃতি|প্রমাণ|কথোপকথন|conversation|message|history|show/i.test(q);
 }
 
 // ─── Google Drive ────────────────────────────────────────────────
@@ -644,9 +749,10 @@ try {
 }
 
 // ─── System Prompt ────────────────────────────────────────────────
-function buildSystemPrompt(userName = "আপনি", userQuery = "") {
-  // Chat DB থেকে relevant messages খোঁজা
-  const dbResults = userQuery ? searchChatDB(userQuery) : "";
+function buildSystemPrompt(userName = "আপনি", userQuery = "", suppliedSearchData = null) {
+  // Chat DB থেকে relevant messages খোঁজা — greeting হলে search একেবারেই নয়।
+  const searchData = suppliedSearchData || searchChatDBRecords(userQuery);
+  const dbResults = formatChatDBResults(searchData.rows);
   const dbLineCount = dbResults ? dbResults.split("\n").filter(l => l.trim()).length : 0;
 
   // Database result indicator — AI জানবে ঠিক কতটি real result আছে
@@ -680,8 +786,12 @@ function buildSystemPrompt(userName = "আপনি", userQuery = "") {
 - কখনো কাউকে "দাদা", "ভাই", "আপু", "বস" বলে ডাকবে না
 - settings-এ নাম থাকলে সেই নামে ডাকবে, না থাকলে সাধারণভাবে কথা বলবে
 - প্রমাণ না থাকলে স্পষ্ট বলবে "এই তারিখের বা বিষয়ের তথ্য আমার কাছে নেই" — কখনো বানিয়ে বলবে না
-- কেউ সালাম দিলে সালামের উত্তর দেবে, সম্মানজনকভাবে
-- কেউ "হ্যালো", "হাই", "হেলো", "hi", "hello", সালাম বা যেকোনো কুশল বিনিময় করলে — সংক্ষিপ্ত সাড়া দেবে এবং বলবে "বলুন, আজ আপনাকে কীভাবে সহযোগিতা করতে পারি?" — কখনো "আমাকে আপনি কীভাবে সহযোগিতা করতে পারেন?" বা "আপনি আমাকে কীভাবে সাহায্য করতে পারেন?" বলবে না — তুমি AI সহকারী, তুমি সাহায্য করো, সাহায্য নাও না
+  - কেউ সালাম দিলে সালামের উত্তর দেবে, সম্মানজনকভাবে
+  - শুধু প্রথম/আলাদা greeting হলে (hi, hello, হ্যালো, সালাম ইত্যাদি) একবার স্বাগত জানাবে, নিজের কাজগুলো সংক্ষেপে বলবে, তারপর জিজ্ঞাসা করবে ব্যবহারকারী কী জানতে চান। এই greeting response-এর শেষে বলবে: "আপনি কী জানতে চান, বলুন।"
+  - greeting-এর প্রস্তাবিত উত্তর: "ওয়া আলাইকুমুস সালাম। PARISA Memory Portal-এ আপনাকে স্বাগতম। আমি নির্দিষ্ট তারিখের chat history থেকে আসল message দেখাতে, screenshot-এর লেখা পড়তে, সম্পর্কের timeline বিশ্লেষণ করতে এবং প্রয়োজন হলে আইন ও ইসলামিক দৃষ্টিকোণ ব্যাখ্যা করতে পারি। আপনি কী জানতে চান, বলুন।"
+  - শুধু hi/hello হলে সালামের উত্তর নয়; "হ্যালো" দিয়ে স্বাগত জানাবে। সালাম হলে সালামের উত্তর দেবে। একই greeting response প্রতিটি সাধারণ প্রশ্নের উত্তরে পুনরাবৃত্তি করবে না।
+  - কেউ "তুমি কী কী পারো?" বা capability জিজ্ঞাসা করলে greeting-এর মতো সংক্ষিপ্ত capability list দেবে এবং শেষে "আপনি কী জানতে চান, বলুন।" বলবে।
+  - greeting বা capability প্রশ্নে chat database search/table করবে না এবং কোনো পুরোনো message উদ্ধৃত করবে না।
 - কখনো ফাইলের নাম যেমন "global_timeline.json", "chat_database.json" উল্লেখ করবে না
 - কখনো "রেফারেন্স:", "ডেটাবেস থেকে", "টাইমলাইনে" এই ধরনের technical কথা বলবে না
 - সরাসরি স্বাভাবিকভাবে উত্তর দেবে যেন তুমি সব মনে রাখো
@@ -748,10 +858,10 @@ RULE 5 — screenshot content:
 ════════════════════════════════════════════════════════════════
 
 ⚠️ TABLE ব্যবহারের কঠোর নিয়ম:
-- Table শুধুমাত্র ধাপ ৩-এ ব্যবহার করবে — অর্থাৎ যখন actual chat messages দেখাতে হয়।
+- Actual chat-history table server UI নিজে exact database rows দিয়ে তৈরি করবে; AI markdown table লিখবে না।
 - সাধারণ প্রশ্নের উত্তর, পরিচয়, সংখ্যা জিজ্ঞাসা, আইনি তথ্য, বিশ্লেষণ, ব্লাক ম্যাজিক বিভাগ — এগুলোতে কখনো table ব্যবহার করবে না।
 - বিশেষত ধাপ ৪, ৫, ৬, ৭-এ plain text বা bullet points ব্যবহার করবে — table নয়।
-- Table দেখাবে শুধু যখন database থেকে actual message row দেখানো হচ্ছে।
+- Chat-history query হলে তুমি শুধু opening ও narrative analysis লিখবে; server UI table দেখাবে।
 
 চ্যাট হিস্টরি ও বিশ্লেষণ দেখানোর নিয়ম — INVESTIGATIVE REPORT FORMAT:
 
@@ -767,7 +877,9 @@ RULE 5 — screenshot content:
 উদাহরণ: ## ৩ জুন ২০২৪: পারিসার মেসেজ আর্কাইভ
 
 ধাপ ৩ — CHAT HISTORY TABLE:
-রুবেল ও পারিসা — উভয়ের মেসেজ table-এ দেখাবে।
+Exact table server-side code দিয়ে তৈরি হবে। তুমি নিজে markdown table বানাবে না এবং database-এর message/sender/platform/timestamp পুনরায় লিখবে না।
+তুমি শুধু opening ও narrative analysis লিখবে; server UI-তে DATABASE QUERY RESULT-এর exact rows table হিসেবে যোগ করবে।
+রুবেল ও পারিসার actual rows server UI table-এ দেখানো হবে।
 মেসেজ হুবহু database থেকে — এক অক্ষরও বদলাবে না।
 Banglish/Bengali/English যেভাবে আছে সেভাবে — অনুবাদ সম্পূর্ণ নিষিদ্ধ।
 প্রতিটি message cell DATABASE QUERY RESULT-এর exact message text থেকে সরাসরি copy করবে; বানান ঠিক করবে না, punctuation বদলাবে না, summary লিখবে না এবং message কেটে দেবে না।
@@ -1214,9 +1326,50 @@ function mount(prefix) {
       const { messages = [], userName = "আপনি", image } = req.body || {};
       refreshDriveMemory().catch(() => {});
 
-// ── প্রতি ৩০ মিনিটে Drive auto-refresh ──
+      // ── প্রতি ৩০ মিনিটে Drive auto-refresh ──
       const lastUserMsg2 = messages[messages.length - 1]?.text || "";
-      const sys = buildSystemPrompt(userName, lastUserMsg2);
+      const searchQuery = buildSearchContext(messages);
+      const searchData = searchChatDBRecords(searchQuery);
+      const userTurns = messages.filter(m => m && m.role === "user" && String(m.text || "").trim());
+      const isFirstUserMessage = userTurns.length === 1;
+
+      // Greeting/capability replies are deterministic so first-contact
+      // behavior works without an AI provider and generic welcome text is
+      // not repeated for every unrelated question.
+      if (!image && isGreetingOnly(lastUserMsg2)) {
+        const finalReply = greetingReply(lastUserMsg2, isFirstUserMessage);
+        logFirebase({ userName, userMessage: lastUserMsg2, aiReply: finalReply, provider: "deterministic", hasImage: false }).catch(() => {});
+        sendTelegram(`👤 ${userName}: ${lastUserMsg2}\n\n🤖 PARISA: ${finalReply}`).catch(() => {});
+        return res.json({ reply: finalReply, provider: "deterministic", chatHistory: [] });
+      }
+      if (!image && isCapabilityQuestion(lastUserMsg2)) {
+        const finalReply = capabilityReply();
+        logFirebase({ userName, userMessage: lastUserMsg2, aiReply: finalReply, provider: "deterministic", hasImage: false }).catch(() => {});
+        sendTelegram(`👤 ${userName}: ${lastUserMsg2}\n\n🤖 PARISA: ${finalReply}`).catch(() => {});
+        return res.json({ reply: finalReply, provider: "deterministic", chatHistory: [] });
+      }
+
+      // A history table is a database operation, not an AI-generation
+      // operation. Return exact rows immediately so a slow or unavailable
+      // provider can never delay, rewrite, or truncate the archive result.
+      if (!image && searchData.isHistoryQuery) {
+        const finalReply = searchData.rows.length
+          ? "আপনার অনুরোধের সঙ্গে মিলে যাওয়া আসল মেসেজগুলো নিচের টেবিলে দেখানো হয়েছে।"
+          : "এই তারিখ বা বিষয়ের কোনো মেসেজ ডেটাবেসে পাওয়া যায়নি।";
+        const chatHistory = searchData.rows.map(m => ({
+          ts: m.ts,
+          snd: m.snd,
+          sndOrig: m.sndOrig,
+          txt: m.txt,
+          platform: m.platform,
+          fileId: m.fileId,
+          globalId: m.globalId,
+        }));
+        logFirebase({ userName, userMessage: lastUserMsg2, aiReply: finalReply, provider: "deterministic-search", hasImage: false }).catch(() => {});
+        sendTelegram(`👤 ${userName}: ${lastUserMsg2}\n\n🤖 PARISA: ${finalReply}`).catch(() => {});
+        return res.json({ reply: finalReply, provider: "deterministic-search", chatHistory });
+      }
+      const sys = buildSystemPrompt(userName, searchQuery, searchData);
       const contents = [];
       for (const m of messages) {
         if (!m || !m.role || !m.text) continue;
@@ -1236,7 +1389,11 @@ function mount(prefix) {
         generationConfig: { temperature: 0.15, maxOutputTokens: 4096 },
       };
       const { reply, provider } = await chatWithFallback(body, !!image);
-      const rawReply = reply || "দুঃখিত, এই মুহূর্তে উত্তর দিতে পারছি না।";
+      const rawReply = reply || (
+        searchData.rows.length
+          ? "আপনার অনুরোধের সঙ্গে মিলে যাওয়া আসল মেসেজগুলো নিচের টেবিলে দেখানো হয়েছে।"
+          : "দুঃখিত, এই মুহূর্তে উত্তর দিতে পারছি না।"
+      );
       const finalReply = cleanReply(rawReply);
       logFirebase({ userName, userMessage: lastUserMsg2, aiReply: finalReply, provider, hasImage: !!image }).catch(() => {});
       const tgText = `👤 ${userName}: ${lastUserMsg2}\n\n🤖 PARISA: ${finalReply}`;
@@ -1254,7 +1411,18 @@ function mount(prefix) {
           }
         })();
       }
-      res.json({ reply: finalReply, provider });
+      const chatHistory = searchData.rows.length && searchData.isHistoryQuery
+        ? searchData.rows.map(m => ({
+            ts: m.ts,
+            snd: m.snd,
+            sndOrig: m.sndOrig,
+            txt: m.txt,
+            platform: m.platform,
+            fileId: m.fileId,
+            globalId: m.globalId,
+          }))
+        : [];
+      res.json({ reply: finalReply, provider, chatHistory });
     } catch (e) {
       console.error("chat error", e);
       res.status(500).json({ reply: "সার্ভারে সমস্যা হয়েছে।" });

@@ -1305,12 +1305,10 @@ PARISA MEMORY PORTAL এ আপনাকে স্বাগতম।
     setTimeout(() => speak("আস্সালামু ওয়ালাইকুম। পারিসা মেমোরি পোর্টালে আপনাকে স্বাগতম।"), 1800);
   }
 
-  // ── Chat History WhatsApp Bubble Renderer ─────────────────────────
-  function isRubelSender(s) {
-    const n = (s || "").toLowerCase().replace(/\s/g, "");
-    return ["kalachan","kalachand","কালাচাঁন","কালাচাঁদ","rubel","রুবেল"].some(k => n.includes(k));
-  }
-
+  // ── Exact Chat History Table Renderer ─────────────────────────────
+  // These cells are populated from the server's database rows, not from
+  // the language model's markdown, so message text cannot be translated
+  // or truncated by the model.
   function appendChatHistory(messages) {
     if (!messages || !messages.length) return;
     const wrap = document.createElement("div");
@@ -1320,34 +1318,38 @@ PARISA MEMORY PORTAL এ আপনাকে স্বাগতম।
     const first = messages[0];
     const hdr = document.createElement("div");
     hdr.className = "ch-header";
-    hdr.textContent = `📱 ${first.platform || "Chat"} — ${first.chatName || ""} — ${(first.ts || "").slice(0, 10)}`;
+    hdr.textContent = `${first.platform || "Chat"} — ${first.ts || ""} — মোট ${messages.length}টি আসল মেসেজ`;
     outer.appendChild(hdr);
-    const log = document.createElement("div");
-    log.className = "chat-log";
+
+    const tableWrap = document.createElement("div");
+    tableWrap.className = "tbl-wrap exact-chat-table-wrap";
+    const table = document.createElement("table");
+    table.className = "exact-chat-table";
+    const thead = document.createElement("thead");
+    const headRow = document.createElement("tr");
+    ["প্রেরক", "মেসেজ", "বিশ্লেষণ", "প্ল্যাটফর্ম", "তারিখ ও সময়"].forEach(label => {
+      const th = document.createElement("th");
+      th.textContent = label;
+      headRow.appendChild(th);
+    });
+    thead.appendChild(headRow);
+    table.appendChild(thead);
+
+    const tbody = document.createElement("tbody");
     for (const m of messages) {
-      const isMe = isRubelSender(m.snd);
-      const row = document.createElement("div");
-      row.className = `cl-row ${isMe ? "right" : "left"}`;
-      const bub = document.createElement("div");
-      bub.className = "cl-bubble";
-      const nm = document.createElement("div");
-      nm.className = "cl-name";
-      nm.textContent = isMe ? "রুবেল" : (m.snd || "পারিসা");
-      const txt = document.createElement("div");
-      txt.className = "cl-msg";
-      txt.textContent = m.txt || "";
-      const ts = document.createElement("div");
-      ts.className = "cl-time";
-      ts.textContent = (m.ts || "").slice(11, 16);
-      bub.append(nm, txt, ts);
-      row.appendChild(bub);
-      log.appendChild(row);
+      const row = document.createElement("tr");
+      row.className = "exact-chat-row";
+      const values = [m.snd || "", m.txt || "", "—", m.platform || "", m.ts || ""];
+      for (const value of values) {
+        const td = document.createElement("td");
+        td.textContent = value;
+        row.appendChild(td);
+      }
+      tbody.appendChild(row);
     }
-    outer.appendChild(log);
-    const ftr = document.createElement("div");
-    ftr.className = "ch-footer";
-    ftr.textContent = `মোট ${messages.length}টি মেসেজ`;
-    outer.appendChild(ftr);
+    table.appendChild(tbody);
+    tableWrap.appendChild(table);
+    outer.appendChild(tableWrap);
     wrap.appendChild(outer);
     messagesEl.appendChild(wrap);
     scrollToBottom();
