@@ -400,6 +400,7 @@ PARISA MEMORY PORTAL এ আপনাকে স্বাগতম।
   let currentAudio = null;
   let currentUtter = null;
   let currentSpeakBtn = null;
+  let speechVersion = 0;
 
   // Text পরিষ্কার করো — TTS-এর আগে
   function stripForTTS(str) {
@@ -431,7 +432,14 @@ PARISA MEMORY PORTAL এ আপনাকে স্বাগতম।
   }
 
   function _stopAll() {
-    if (currentAudio) { currentAudio.pause(); currentAudio = null; }
+    speechVersion++;
+    if (currentAudio) {
+      const audio = currentAudio;
+      audio._cancelled = true;
+      if (typeof audio._finish === "function") audio._finish();
+      audio.pause();
+      currentAudio = null;
+    }
     if (currentUtter) { speechSynthesis.cancel(); currentUtter = null; }
     if (currentSpeakBtn) { _resetSpeakBtn(currentSpeakBtn); currentSpeakBtn = null; }
   }
@@ -561,6 +569,7 @@ PARISA MEMORY PORTAL এ আপনাকে স্বাগতম।
   async function speakAndWait(text, captionEl = null, statusEl = null) {
     if (!text || !text.trim()) return;
     _stopAll();
+    const mySpeechVersion = speechVersion;
     _ensureAudioCtx();
     const clean = stripForTTS(text);
     if (!clean) return;
@@ -571,6 +580,7 @@ PARISA MEMORY PORTAL এ আপনাকে স্বাগতম।
       if (blob === undefined) _showErrorToast("⚠️ ভয়েস তৈরি করা যায়নি, আবার চেষ্টা করুন");
       return;
     }
+    if (mySpeechVersion !== speechVersion) return;
 
     const url = URL.createObjectURL(blob);
     currentAudio = new Audio(url);
@@ -615,13 +625,28 @@ PARISA MEMORY PORTAL এ আপনাকে স্বাগতম।
       });
     }
 
+    const audio = currentAudio;
+    if (mySpeechVersion !== speechVersion) {
+      _stopAll();
+      return;
+    }
     await new Promise(res => {
-      const done = () => { currentAudio = null; URL.revokeObjectURL(url); res(); };
-      currentAudio.addEventListener("ended", done, { once: true });
-      currentAudio.addEventListener("error", done, { once: true });
-      currentAudio.play().catch(() => done());
+      let finished = false;
+      const done = () => {
+        if (finished) return;
+        finished = true;
+        if (audio._finish === done) delete audio._finish;
+        if (currentAudio === audio) currentAudio = null;
+        URL.revokeObjectURL(url);
+        res();
+      };
+      audio._finish = done;
+      audio.addEventListener("ended", done, { once: true });
+      audio.addEventListener("error", done, { once: true });
+      audio.play().catch(() => done());
     });
 
+    if (audio._cancelled) return;
     // Fade caption out 1.8 s after speaking ends
     if (captionEl && captionEl.children.length) {
       await new Promise(r => setTimeout(r, 1800));
@@ -632,6 +657,92 @@ PARISA MEMORY PORTAL এ আপনাকে স্বাগতম।
       captionEl.style.opacity = "1";
       captionEl.style.transition = "";
     }
+  }
+
+  // Listen while PARISA is speaking. The first interim result stops TTS
+  // immediately; the final result is returned as the next user turn.
+  function startBargeIn(lang, onStart, onFinal) {
+    let active = true;
+    let rec = null;
+    let heard = "";
+    let interrupted = false;
+    let finalDelivered = false;
+    let restartTimer = null;
+
+    const start = () => {
+      if (!active || !SR) return;
+      rec = makeRecognizer(lang, false);
+      if (!rec) return;
+      heard = "";
+      interrupted = false;
+      finalDelivered = false;
+      rec.onresult = (e) => {
+        let interim = "";
+        for (let i = e.resultIndex; i < e.results.length; i++) {
+          const text = e.results[i][0].transcript;
+          if (e.results[i].isFinal) heard += text; else interim += text;
+        }
+        const spoken = (heard || interim).trim();
+        if (spoken && !interrupted) {
+          interrupted = true;
+          onStart?.();
+        }
+        if (heard.trim()) {
+          active = false;
+          if (!finalDelivered) {
+            finalDelivered = true;
+            onFinal?.(heard.trim());
+          }
+          try { rec.stop(); } catch {}
+        }
+      };
+      rec.onend = () => {
+        rec = null;
+        if (active) restartTimer = setTimeout(start, 120);
+        else if (interrupted && heard.trim() && !finalDelivered) {
+          finalDelivered = true;
+          onFinal?.(heard.trim());
+        }
+      };
+      rec.onerror = () => {
+        rec = null;
+        if (active) restartTimer = setTimeout(start, 250);
+        else if (interrupted && heard.trim() && !finalDelivered) {
+          finalDelivered = true;
+          onFinal?.(heard.trim());
+        }
+      };
+      try { rec.start(); } catch { restartTimer = setTimeout(start, 250); }
+    };
+    start();
+    return () => {
+      active = false;
+      if (restartTimer) clearTimeout(restartTimer);
+      if (rec) {
+        rec.onend = null;
+        rec.onerror = null;
+        try { rec.stop(); } catch {}
+        rec = null;
+      }
+    };
+  }
+
+  async function interruptibleSpeakAndWait(text, captionEl, statusEl, lang) {
+    let finalResolve;
+    let settled = false;
+    const finalText = new Promise(resolve => { finalResolve = resolve; });
+    const stopBargeIn = startBargeIn(
+      lang,
+      () => _stopAll(),
+      text => finalResolve(text)
+    );
+    const result = await Promise.race([
+      speakAndWait(text, captionEl, statusEl).then(() => ({ spoken: true })),
+      finalText.then(text => ({ interrupted: text })),
+    ]);
+    settled = true;
+    stopBargeIn();
+    return result.interrupted || null;
   }
 
   // ── Composer ─────────────────────────────────────────────────────
@@ -974,7 +1085,7 @@ PARISA MEMORY PORTAL এ আপনাকে স্বাগতম।
   function endAudioCall() {
     callOn = false;
     if (callRecognizer) { try { callRecognizer.stop(); } catch {} }
-    if (currentAudio) { currentAudio.pause(); currentAudio = null; }
+    _stopAll();
     setWave("idle");
     $("#audioCallView").classList.remove("is-open");
     // Call history চ্যাটে দেখাও
@@ -1021,15 +1132,24 @@ PARISA MEMORY PORTAL এ আপনাকে স্বাগতম।
         return;
       }
 
-      // Speech detected → AI → speak
+      // Speech detected → AI → speak. While speaking, keep a second
+      // recognition session alive so the user can interrupt naturally.
       setCallState("thinking");
       if ($("#audioCallStatus")) $("#audioCallStatus").textContent = "ভাবছি…";
-      const reply = await callChat(said);
-      if (!callOn || _callSeq !== seq) return;
-
-      setCallState("talking");
-      if ($("#audioCallStatus")) $("#audioCallStatus").textContent = "বলছি…";
-      await speakAndWait(reply, $("#audioCallCaption"), $("#audioCallStatus"));
+      let nextTurn = said;
+      while (nextTurn && callOn && _callSeq === seq) {
+        const reply = await callChat(nextTurn);
+        if (!callOn || _callSeq !== seq) return;
+        setCallState("talking");
+        if ($("#audioCallStatus")) $("#audioCallStatus").textContent = "বলছি…";
+        nextTurn = await interruptibleSpeakAndWait(
+          reply, $("#audioCallCaption"), $("#audioCallStatus"), _langChain[_langIdx]
+        );
+        if (nextTurn) {
+          setCallState("thinking");
+          if ($("#audioCallStatus")) $("#audioCallStatus").textContent = "আপনার কথা শুনছি…";
+        }
+      }
       if (!callOn || _callSeq !== seq) return;
 
       // Done speaking — restart listening
@@ -1145,7 +1265,7 @@ PARISA MEMORY PORTAL এ আপনাকে স্বাগতম।
     vcOn = false;
     if (vcRecognizer) { try { vcRecognizer.stop(); } catch {} }
     if (vcStream) { vcStream.getTracks().forEach(t => t.stop()); vcStream = null; }
-    if (currentAudio) { currentAudio.pause(); currentAudio = null; }
+    _stopAll();
     $("#videoCallView").classList.remove("is-open");
     // Video call history চ্যাটে দেখাও
     const vc = getActive();
@@ -1189,14 +1309,15 @@ PARISA MEMORY PORTAL এ আপনাকে স্বাগতম।
 
       if ($("#videoCallStatus")) $("#videoCallStatus").textContent = "ভাবছি…";
       try {
-        const r = await fetch(api("/chat"), {
-          method: "POST", headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ messages: [{ role: "user", text: said }], userName: settings.userName }),
-        });
-        const data = await r.json();
-        const reply = data.reply || "কিছু বুঝতে পারলাম না।";
-        if (!vcOn || _vcSeq !== seq) return;
-        await speakAndWait(reply, $("#videoCallCaption"), $("#videoCallStatus"));
+        let nextTurn = said;
+        while (nextTurn && vcOn && _vcSeq === seq) {
+          const reply = await callChat(nextTurn);
+          if (!vcOn || _vcSeq !== seq) return;
+          await interruptibleSpeakAndWait(
+            reply, $("#videoCallCaption"), $("#videoCallStatus"), _langChain[_langIdx]
+          ).then(interrupted => { nextTurn = interrupted; });
+          if (nextTurn && $("#videoCallStatus")) $("#videoCallStatus").textContent = "আপনার কথা শুনছি…";
+        }
       } catch {
         if ($("#videoCallCaption")) {
           $("#videoCallCaption").textContent = "নেটওয়ার্ক সমস্যা";
