@@ -1,1 +1,2 @@
 - [GitHub remote authentication](github-remote-auth.md) — this workspace may require secret-backed askpass for GitHub pushes instead of the default remote credential flow.
+- [Screenshot evidence boundary](screenshot-evidence.md) — inspect screenshot pixels only during an explicit archive search; ordinary image display must remain OCR-free.
