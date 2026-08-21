@@ -518,6 +518,27 @@ function formatChatDBResults(rows) {
   ).join("\n");
 }
 
+function summarizeHistoryMessage(text) {
+  const value = normalizeSearchText(text);
+  if (!value) return "বার্তাটি ফাঁকা।";
+  if (/ভালোবাস|ভালবাস|love|miss|মিস করি|ভালো আছো|ভাল আছো/i.test(value)) {
+    return "বার্তায় স্নেহ, ভালোবাসা বা খোঁজ নেওয়ার প্রকাশ আছে।";
+  }
+  if (/রাগ|ঘৃণা|গালি|ব্লক|block|তালাক|divorce|ছেড়ে|ছাড়|ভালো লাগে না|lojja|nerlojj|opoman|sahosha|sahas|valo saj|jabo na|koros|kano kor/i.test(value)) {
+    return "বার্তায় বিরোধ, দূরত্ব বা নেতিবাচক আবেগের ইঙ্গিত আছে।";
+  }
+  if (/বিয়ে|বিয়ে|স্বামী|স্ত্রী|marriage|শ্বশুর|পরিবার|বাবা|মা/i.test(value)) {
+    return "বার্তাটি সম্পর্ক, বিবাহ বা পারিবারিক প্রসঙ্গের সঙ্গে যুক্ত।";
+  }
+  if (/\?|？|কেন|কী|কি|how|why|what/i.test(value)) {
+    return "বার্তায় প্রশ্ন, ব্যাখ্যা বা তথ্য জানার চেষ্টা দেখা যায়।";
+  }
+  if (/আস|যাব|এসো|চলো|দেখা|call|ফোন|যোগাযোগ|মেসেজ/i.test(value)) {
+    return "বার্তায় যোগাযোগ, দেখা করা বা পরবর্তী পদক্ষেপের প্রসঙ্গ আছে।";
+  }
+  return "বার্তাটি সংরক্ষিত কথোপকথনের একটি স্বতন্ত্র বক্তব্য।";
+}
+
 function searchChatDB(query) {
   return formatChatDBResults(searchChatDBRecords(query).rows);
 }
@@ -931,7 +952,7 @@ function buildSystemPrompt(userName = "আপনি", userQuery = "", suppliedSe
 - চ্যাট হিস্টরি থেকে নির্দিষ্ট তারিখ ও তথ্য হুবহু মূল ভাষায় উদ্ধৃত করা
 - user স্পষ্টভাবে history/screenshot search করলে filename-এর পাশাপাশি screenshot-এর দৃশ্যমান date/message মিলিয়ে প্রাসঙ্গিক ছবি [IMAGE:FILE_ID] format দিয়ে দেখানো
 - বাংলাদেশের বিবাহ আইন ও ইসলামিক দৃষ্টিকোণ থেকে বিশ্লেষণ করা
-- রুবেলের দেওয়া সংরক্ষিত history এবং exact chat archive-কে এই portal-এর authoritative সত্য হিসেবে ধরে উত্তর দেওয়া; এর বাইরে কোনো কথা বানানো নয়
+  - রুবেলের দেওয়া সংরক্ষিত history এবং exact chat archive-কে এই portal-এর authoritative সত্য হিসেবে ধরে উত্তর দেওয়া; এর বাইরে কোনো archive fact বানানো নয়
 
 কঠোর নিয়ম — এগুলো কখনো ভাঙবে না:
 - সর্বদা পরিষ্কার বাংলায় উত্তর দেবে
@@ -949,7 +970,7 @@ function buildSystemPrompt(userName = "আপনি", userQuery = "", suppliedSe
   - greeting বা capability প্রশ্নে chat database search/table করবে না এবং কোনো পুরোনো message উদ্ধৃত করবে না।
 - কখনো ফাইলের নাম যেমন "global_timeline.json", "chat_database.json" উল্লেখ করবে না
 - কখনো "রেফারেন্স:", "ডেটাবেস থেকে", "টাইমলাইনে" এই ধরনের technical কথা বলবে না
-- সরাসরি স্বাভাবিকভাবে উত্তর দেবে যেন তুমি সব মনে রাখো
+  - history query না হলে পুরোনো chat search/table-এর উত্তর চাপিয়ে দেবে না; সাধারণ প্রশ্নের উত্তর স্বাভাবিকভাবে দেবে। রিয়েল-টাইম তথ্য না থাকলে শুধু সেটি স্পষ্ট বলবে, "শুধু chat history-ই জানি" বলে কথোপকথন বন্ধ করবে না
 
 চ্যাট ডাটাবেসের ব্যক্তি পরিচয় — অত্যন্ত গুরুত্বপূর্ণ:
 - "কালাচাঁন" বা "কালাচাঁদ" বা "Kalachan" sender = রুবেল (পারিসার স্বামী)
@@ -1503,7 +1524,15 @@ function mount(prefix) {
       const searchQuery = continuation
         ? String(historyContext.query)
         : buildSearchContext(messages);
-      const searchData = searchChatDBRecords(searchQuery);
+      const rawSearchData = searchChatDBRecords(searchQuery);
+      // A normal new question must not inherit a previous archive query or
+      // inject incidental keyword matches into the model context. Only an
+      // explicit history request (or an intentional "more" continuation)
+      // may use archive rows.
+      const explicitHistoryRequest = continuation || isChatHistoryRequest(searchQuery);
+      const searchData = explicitHistoryRequest
+        ? rawSearchData
+        : { rows: [], isHistoryQuery: false };
       const userTurns = messages.filter(m => m && m.role === "user" && String(m.text || "").trim());
       const isFirstUserMessage = userTurns.length === 1;
 
@@ -1535,6 +1564,7 @@ function mount(prefix) {
           snd: m.snd,
           sndOrig: m.sndOrig,
           txt: m.txt,
+          analysis: summarizeHistoryMessage(m.txt),
           platform: m.platform,
           fileId: m.fileId,
           globalId: m.globalId,
@@ -1607,6 +1637,7 @@ function mount(prefix) {
             snd: m.snd,
             sndOrig: m.sndOrig,
             txt: m.txt,
+            analysis: summarizeHistoryMessage(m.txt),
             platform: m.platform,
             fileId: m.fileId,
             globalId: m.globalId,
@@ -1624,12 +1655,10 @@ function mount(prefix) {
     try {
       const { prompt = "এই ফাইলটা বিশ্লেষণ করে বাংলায় বল।", file, mime, userName = "আপনি" } = req.body || {};
       if (!file) return res.status(400).json({ reply: "ফাইল পাইনি।" });
-      // Image analysis is intentionally disabled outside the explicit
-      // screenshot-search path above. This prevents automatic OCR from
-      // attachments, camera frames, and video-call snapshots.
-      if (String(mime || "").startsWith("image/") || String(file).startsWith("data:image/")) {
-        return res.json({ reply: "ছবিটি দেখানো হলো। এর ভেতরের লেখা স্বয়ংক্রিয়ভাবে পড়া বা বিশ্লেষণ করা হয় না।" });
-      }
+      // This endpoint is for an explicit user action: an uploaded image,
+      // camera snapshot, or video-call snapshot. The separate
+      // /analyze-screenshot endpoint remains disabled so Drive history
+      // screenshots are displayed/evidence-matched only, never auto-read.
       const sys = buildSystemPrompt(userName);
       const b64 = String(file).split(",").pop();
       const mt = mime || (String(file).match(/^data:(.*?);base64/) || [])[1] || "application/octet-stream";

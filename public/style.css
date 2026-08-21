@@ -1112,27 +1112,70 @@ textarea, input, select { font-family: inherit; color: inherit; }
 }
 /* Message column — largest flexible column */
 .msg table td:nth-child(2) {
-  color: #e8f8ff; font-style: italic; width: 35%;
-  white-space: pre-wrap; overflow-wrap: anywhere;
+  color: #e8f8ff; font-style: italic; width: 44%;
+  white-space: pre-wrap; overflow-wrap: break-word; word-break: normal;
 }
 /* Analysis column */
 .msg table td:nth-child(3) {
-  color: #c8e8f4; font-size: 11.5px; width: 20%;
-  overflow-wrap: anywhere;
+  color: #c8e8f4; font-size: 11px; width: 18%;
+  overflow-wrap: break-word; word-break: normal;
 }
 /* Platform column */
 .msg table td:nth-child(4) {
-  font-weight: 600; font-size: 11px; width: 13%;
-  overflow-wrap: anywhere;
+  font-weight: 600; font-size: 10.5px; width: 11%;
+  overflow-wrap: break-word; word-break: normal;
 }
 /* Timestamp column */
 .msg table td:nth-child(5) {
-  color: rgba(180,240,250,.72); font-size: 11px; width: 17%;
-  overflow-wrap: anywhere;
+  color: rgba(180,240,250,.72); font-size: 10px; width: 12%;
+  overflow-wrap: break-word; word-break: normal;
 }
 .msg table tr:hover td { background: rgba(95,232,255,.05); }
 .msg table tr:last-child td { border-bottom: none; }
 .msg table tr:nth-child(even) td { background: rgba(180,240,250,.025); }
+
+/* Exact history rows keep the existing table box, but make long messages
+   readable and keep screenshots inside their cards without zoom/cropping. */
+.exact-chat-table-wrap { overflow: hidden !important; }
+.exact-chat-table td:nth-child(2) { font-size: 11px; line-height: 1.45; }
+.exact-chat-table td:nth-child(3) { font-size: 10px; line-height: 1.4; }
+.history-proof-title {
+  margin: 12px 2px 6px;
+  color: #6ff0ff;
+  font-size: 12px;
+  font-weight: 700;
+}
+.history-screenshots {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+  gap: 10px;
+  width: 100%;
+}
+.history-screenshot {
+  min-width: 0;
+  margin: 0;
+  padding: 7px;
+  border: 1px solid rgba(95,232,255,.14);
+  border-radius: 10px;
+  background: rgba(0,15,22,.45);
+}
+.history-screenshot img {
+  display: block;
+  width: 100%;
+  max-width: 100%;
+  height: auto;
+  max-height: 420px;
+  object-fit: contain;
+  object-position: center;
+  border-radius: 7px;
+}
+.history-screenshot figcaption {
+  margin-top: 6px;
+  color: rgba(180,240,250,.7);
+  font-size: 10px;
+  line-height: 1.35;
+  overflow-wrap: break-word;
+}
 
 /* ══ Reference numbers [X] — hidden (user disabled) ══════════════ */
 .msg .ref-num { display: none; }

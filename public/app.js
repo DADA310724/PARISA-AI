@@ -978,7 +978,9 @@ PARISA MEMORY PORTAL এ আপনাকে স্বাগতম।
     try {
       if (camStream) camStream.getTracks().forEach(t => t.stop());
       camStream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: facing }, audio: false });
-      video.srcObject = camStream; view.classList.add("is-open");
+      video.srcObject = camStream;
+      view.classList.add("is-open");
+      await video.play().catch(() => {});
     } catch (e) { alert("ক্যামেরা চালু করা যাচ্ছে না: " + e.message); }
   }
   function stopCam() { if (camStream) { camStream.getTracks().forEach(t => t.stop()); camStream = null; } }
@@ -993,9 +995,22 @@ PARISA MEMORY PORTAL এ আপনাকে স্বাগতম।
 
   async function askAboutCamera(promptText) {
     const cap = $("#camCaption");
-    snapshot($("#camVideo"), $("#camCanvas"));
-    cap.textContent = "ছবিটি দেখানো হলো। এর ভেতরের লেখা স্বয়ংক্রিয়ভাবে পড়া বা বিশ্লেষণ করা হয় না।";
-    speak(cap.textContent);
+    cap.textContent = "ছবিটি বিশ্লেষণ করছি…";
+    const img = snapshot($("#camVideo"), $("#camCanvas"));
+    try {
+      const r = await fetch(api("/analyze"), {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          prompt: promptText || "এই ছবিতে কী দেখা যাচ্ছে? দৃশ্যমান লেখা থাকলে পড়ে বাংলায় সংক্ষেপে বল।",
+          file: img, mime: "image/jpeg", userName: settings.userName
+        }),
+      });
+      const data = await r.json();
+      cap.textContent = data.reply || "ছবিটি বিশ্লেষণ করতে পারলাম না।";
+      speak(cap.textContent);
+    } catch {
+      cap.textContent = "ছবিটি বিশ্লেষণ করা যাচ্ছে না।";
+    }
   }
   $("#askCamBtn").onclick = () => askAboutCamera();
   $("#camMicBtn").onclick = () => {
@@ -1108,10 +1123,9 @@ PARISA MEMORY PORTAL এ আপনাকে স্বাগতম।
     const rec = makeRecognizer(_langChain[_langIdx], false);
     if (!rec) return; // SR not available (shouldn't reach — already checked in startAudioCall)
     callRecognizer = rec;
-    let heard = "", interim = "";
+    let heard = "", interim = "", blocked = false;
 
     rec.onresult = (e) => {
-      heard = ""; interim = "";
       for (let i = e.resultIndex; i < e.results.length; i++) {
         const t = e.results[i][0].transcript;
         if (e.results[i].isFinal) heard += t; else interim += t;
@@ -1122,7 +1136,7 @@ PARISA MEMORY PORTAL এ আপনাকে স্বাগতম।
     };
 
     rec.onend = async () => {
-      if (!callOn || _callSeq !== seq) return;
+      if (!callOn || _callSeq !== seq || blocked) return;
       const said = heard.trim();
       updateUserCaption("", "userCaption");
 
@@ -1172,12 +1186,10 @@ PARISA MEMORY PORTAL এ আপনাকে স্বাগতম।
         setTimeout(() => { if (callOn && _callSeq === seq) callLoop(); }, 500);
       } else if (e.error === "not-allowed" || e.error === "audio-capture") {
         // Microphone permission denied
+        blocked = true;
         if ($("#audioCallStatus")) $("#audioCallStatus").textContent = "মাইক্রোফোন অনুমতি দিন";
         setCallState("thinking");
         // Don't restart — wait for user action
-      } else if (e.error !== "aborted") {
-        // Other error — retry after delay
-        setTimeout(() => { if (callOn && _callSeq === seq) callLoop(); }, 800);
       }
     };
 
@@ -1213,8 +1225,7 @@ PARISA MEMORY PORTAL এ আপনাকে স্বাগতম।
   $("#askVideoBtn").onclick    = () => {
     if (!vcOn) return;
     if (!SR) {
-      snapshot($("#videoCallVideo"), $("#videoCallCanvas"));
-      $("#videoCallCaption").textContent = "ছবিটি দেখানো হলো। এর ভেতরের লেখা স্বয়ংক্রিয়ভাবে পড়া বা বিশ্লেষণ করা হয় না।";
+      askAboutVideoSnapshot("এই ছবিতে কী দেখা যাচ্ছে? দৃশ্যমান লেখা থাকলে পড়ে বাংলায় সংক্ষেপে বল।");
       return;
     }
     // ভয়েস দিয়ে জিজ্ঞেস করো তারপর snapshot নাও
@@ -1223,13 +1234,33 @@ PARISA MEMORY PORTAL এ আপনাকে স্বাগতম।
     let heard = "";
     r.onresult = (e) => { for (let i = e.resultIndex; i < e.results.length; i++) if (e.results[i].isFinal) heard += e.results[i][0].transcript; };
     r.onend = () => {
-      snapshot($("#videoCallVideo"), $("#videoCallCanvas"));
-      $("#videoCallStatus").textContent = "কানেক্টেড";
-      $("#videoCallCaption").textContent = "ছবিটি দেখানো হলো। এর ভেতরের লেখা স্বয়ংক্রিয়ভাবে পড়া বা বিশ্লেষণ করা হয় না।";
+      askAboutVideoSnapshot(heard.trim() || "এই ছবিতে কী দেখা যাচ্ছে?");
     };
     r.onerror = () => { $("#videoCallStatus").textContent = "কানেক্টেড"; };
     r.start();
   };
+
+  async function askAboutVideoSnapshot(promptText) {
+    if (!vcOn) return;
+    const img = snapshot($("#videoCallVideo"), $("#videoCallCanvas"));
+    $("#videoCallStatus").textContent = "ভাবছি…";
+    $("#videoCallCaption").textContent = "ছবিটি বিশ্লেষণ করছি…";
+    try {
+      const r = await fetch(api("/analyze"), {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          prompt: promptText, file: img, mime: "image/jpeg", userName: settings.userName
+        }),
+      });
+      const data = await r.json();
+      if (!vcOn) return;
+      const reply = data.reply || "ছবিটি বিশ্লেষণ করতে পারলাম না।";
+      await speakAndWait(reply, $("#videoCallCaption"), $("#videoCallStatus"), _langChain[_langIdx]);
+      if (vcOn) $("#videoCallStatus").textContent = "কানেক্টেড";
+    } catch {
+      if (vcOn) $("#videoCallStatus").textContent = "ছবিটি বিশ্লেষণ করা যায়নি";
+    }
+  }
 
   async function openVcCam() {
     try {
@@ -1285,10 +1316,9 @@ PARISA MEMORY PORTAL এ আপনাকে স্বাগতম।
     const rec = makeRecognizer(_langChain[_langIdx], false);
     if (!rec) return;
     vcRecognizer = rec;
-    let heard = "", interim = "";
+    let heard = "", interim = "", blocked = false;
 
     rec.onresult = (e) => {
-      heard = ""; interim = "";
       for (let i = e.resultIndex; i < e.results.length; i++) {
         const t = e.results[i][0].transcript;
         if (e.results[i].isFinal) heard += t; else interim += t;
@@ -1298,7 +1328,7 @@ PARISA MEMORY PORTAL এ আপনাকে স্বাগতম।
     };
 
     rec.onend = async () => {
-      if (!vcOn || _vcSeq !== seq) return;
+      if (!vcOn || _vcSeq !== seq || blocked) return;
       const said = heard.trim();
       updateUserCaption("", "vcUserCaption");
 
@@ -1311,7 +1341,15 @@ PARISA MEMORY PORTAL এ আপনাকে স্বাগতম।
       try {
         let nextTurn = said;
         while (nextTurn && vcOn && _vcSeq === seq) {
-          const reply = await callChat(nextTurn);
+          const img = snapshot($("#videoCallVideo"), $("#videoCallCanvas"));
+          const r = await fetch(api("/analyze"), {
+            method: "POST", headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              prompt: nextTurn, file: img, mime: "image/jpeg", userName: settings.userName
+            }),
+          });
+          const data = await r.json();
+          const reply = data.reply || "ছবিটি বুঝতে পারলাম না।";
           if (!vcOn || _vcSeq !== seq) return;
           await interruptibleSpeakAndWait(
             reply, $("#videoCallCaption"), $("#videoCallStatus"), _langChain[_langIdx]
@@ -1338,9 +1376,8 @@ PARISA MEMORY PORTAL এ আপনাকে স্বাগতম।
         if (_langIdx < _langChain.length - 1) _langIdx++;
         setTimeout(() => { if (vcOn && _vcSeq === seq) videoCallLoop(); }, 500);
       } else if (e.error === "not-allowed" || e.error === "audio-capture") {
+        blocked = true;
         if ($("#videoCallStatus")) $("#videoCallStatus").textContent = "মাইক্রোফোন অনুমতি দিন";
-      } else if (e.error !== "aborted") {
-        setTimeout(() => { if (vcOn && _vcSeq === seq) videoCallLoop(); }, 800);
       }
     };
 
@@ -1394,7 +1431,7 @@ PARISA MEMORY PORTAL এ আপনাকে স্বাগতম।
     for (const m of messages) {
       const row = document.createElement("tr");
       row.className = "exact-chat-row";
-      const values = [m.snd || "", m.txt || "", "—", m.platform || "", m.ts || ""];
+      const values = [m.snd || "", m.txt || "", m.analysis || "বিশ্লেষণ পাওয়া যায়নি।", m.platform || "", m.ts || ""];
       for (const value of values) {
         const td = document.createElement("td");
         td.textContent = value;
