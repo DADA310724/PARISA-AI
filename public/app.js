@@ -15,7 +15,6 @@
 PARISA MEMORY PORTAL এ আপনাকে স্বাগতম।
 
 আমি এই সিস্টেমের অফিশিয়াল এআই রিপ্রেজেন্টেটিভ (PARISA)।
-আমাকে তৈরী করেছেন আমার ডেভলপার।
 
 আমার কাজ হল পারিসা মেমোরি পোর্টালের এআই সহকারী হিসেবে "পারিসা ও রুবেল" — তাদের বৈবাহিক সম্পর্ক, তাদের জীবনের দীর্ঘ এই আড়াই বছরের ঘটনা ও অজানা বাস্তব প্রমাণ সহকারে তুলে ধরা। পারিসার পরিবারের বিভিন্ন পদক্ষেপ এবং এর পেছনের যাবতীয় আইনি ধারা ও ব্ল্যাক ম্যাজিক সম্পর্কিত নিখুঁত তদন্তের রিপোর্ট বিশ্লেষণ করার দায়িত্ব আমার।
 
@@ -23,7 +22,7 @@ PARISA MEMORY PORTAL এ আপনাকে স্বাগতম।
 
 আমি যা করতে পারি:
 • তাদের সম্পর্কের গল্প ও ইতিহাস বলতে পারি
-• চ্যাট হিস্টরি, ছবি, স্ক্রিনশট বিশ্লেষণ করে সত্যতা প্রমাণ করতে পারি
+• আসল chat history খুঁজে দেখাতে এবং history search-এর সময় প্রাসঙ্গিক screenshot মিলিয়ে দেখাতে পারি
 • বাংলাদেশের বিবাহ আইন, ডিভোর্স আইন সম্পর্কে বিস্তারিত আইনি ধারা বলতে পারি
 • ব্ল্যাক ম্যাজিকের ভয়াবহ প্রভাব সম্পর্কে বিশ্লেষণ করে বলতে পারি
 
@@ -194,7 +193,7 @@ PARISA MEMORY PORTAL এ আপনাকে স্বাগতম।
   function renderMarkdown(text) {
     const imgBase = api("/image/");
 
-    // [IMAGE:FILE_ID] → screenshot wrapper + analyze button
+    // [IMAGE:FILE_ID] → screenshot wrapper; OCR is not automatic
     text = text.replace(/\[IMAGE:([A-Za-z0-9_\-]+)\]/g, (_, fid) =>
       `SSPLACEHOLDER_${fid}_SSPLACEHOLDER`
     );
@@ -883,17 +882,9 @@ PARISA MEMORY PORTAL এ আপনাকে স্বাগতম।
 
   async function askAboutCamera(promptText) {
     const cap = $("#camCaption");
-    cap.textContent = "দেখছি…";
-    const img = snapshot($("#camVideo"), $("#camCanvas"));
-    try {
-      const r = await fetch(api("/analyze"), {
-        method: "POST", headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ prompt: promptText || "এই ছবিতে কী দেখা যাচ্ছে? বাংলায় সংক্ষেপে বল।", file: img, mime: "image/jpeg", userName: settings.userName }),
-      });
-      const data = await r.json();
-      cap.textContent = data.reply || "কিছু বুঝতে পারলাম না।";
-      speak(cap.textContent);
-    } catch { cap.textContent = "নেটওয়ার্ক সমস্যা।"; }
+    snapshot($("#camVideo"), $("#camCanvas"));
+    cap.textContent = "ছবিটি দেখানো হলো। এর ভেতরের লেখা স্বয়ংক্রিয়ভাবে পড়া বা বিশ্লেষণ করা হয় না।";
+    speak(cap.textContent);
   }
   $("#askCamBtn").onclick = () => askAboutCamera();
   $("#camMicBtn").onclick = () => {
@@ -1101,17 +1092,9 @@ PARISA MEMORY PORTAL এ আপনাকে স্বাগতম।
   // Video call-এ manual snapshot + voice input button
   $("#askVideoBtn").onclick    = () => {
     if (!vcOn) return;
-    if (!SR) { // SR নেই — সরাসরি snapshot পাঠাও
-      const img = snapshot($("#videoCallVideo"), $("#videoCallCanvas"));
-      const oldStatus = $("#videoCallStatus").textContent;
-      $("#videoCallStatus").textContent = "ভাবছি…";
-      fetch(api("/analyze"), {
-        method: "POST", headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ prompt: "এই ছবিতে কী দেখা যাচ্ছে? বাংলায় বলো।", file: img, mime: "image/jpeg", userName: settings.userName }),
-      }).then(r => r.json()).then(d => {
-        updateCaption($("#videoCallCaption"), d.reply || "কিছু বুঝলাম না।");
-        speakAndWait(d.reply || "", $("#videoCallCaption"), $("#videoCallStatus"));
-      }).catch(() => { $("#videoCallStatus").textContent = oldStatus; });
+    if (!SR) {
+      snapshot($("#videoCallVideo"), $("#videoCallCanvas"));
+      $("#videoCallCaption").textContent = "ছবিটি দেখানো হলো। এর ভেতরের লেখা স্বয়ংক্রিয়ভাবে পড়া বা বিশ্লেষণ করা হয় না।";
       return;
     }
     // ভয়েস দিয়ে জিজ্ঞেস করো তারপর snapshot নাও
@@ -1120,15 +1103,9 @@ PARISA MEMORY PORTAL এ আপনাকে স্বাগতম।
     let heard = "";
     r.onresult = (e) => { for (let i = e.resultIndex; i < e.results.length; i++) if (e.results[i].isFinal) heard += e.results[i][0].transcript; };
     r.onend = () => {
-      const img = snapshot($("#videoCallVideo"), $("#videoCallCanvas"));
-      const q = heard.trim() || "এই ছবিতে কী দেখা যাচ্ছে?";
-      $("#videoCallStatus").textContent = "ভাবছি…";
-      fetch(api("/analyze"), {
-        method: "POST", headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ prompt: q, file: img, mime: "image/jpeg", userName: settings.userName }),
-      }).then(r => r.json()).then(d => {
-        speakAndWait(d.reply || "", $("#videoCallCaption"), $("#videoCallStatus"));
-      }).catch(() => { $("#videoCallStatus").textContent = "কানেক্টেড"; });
+      snapshot($("#videoCallVideo"), $("#videoCallCanvas"));
+      $("#videoCallStatus").textContent = "কানেক্টেড";
+      $("#videoCallCaption").textContent = "ছবিটি দেখানো হলো। এর ভেতরের লেখা স্বয়ংক্রিয়ভাবে পড়া বা বিশ্লেষণ করা হয় না।";
     };
     r.onerror = () => { $("#videoCallStatus").textContent = "কানেক্টেড"; };
     r.start();
@@ -1211,11 +1188,10 @@ PARISA MEMORY PORTAL এ আপনাকে স্বাগতম।
       }
 
       if ($("#videoCallStatus")) $("#videoCallStatus").textContent = "ভাবছি…";
-      const img = snapshot($("#videoCallVideo"), $("#videoCallCanvas"));
       try {
-        const r = await fetch(api("/analyze"), {
+        const r = await fetch(api("/chat"), {
           method: "POST", headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ prompt: said, file: img, mime: "image/jpeg", userName: settings.userName }),
+          body: JSON.stringify({ messages: [{ role: "user", text: said }], userName: settings.userName }),
         });
         const data = await r.json();
         const reply = data.reply || "কিছু বুঝতে পারলাম না।";

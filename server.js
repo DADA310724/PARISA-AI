@@ -18,7 +18,7 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const publicDir = path.join(__dirname, "public");
 
 // ভার্সন ফরম্যাট: V-<n> — প্রতিটি নতুন আপডেটে n ঠিক ১ করে বাড়বে (package.json-এর semver থেকে স্বাধীন)
-const APP_VERSION = "V-27";
+const APP_VERSION = "V-28";
 
 const app = express();
 app.use(cors());
@@ -497,7 +497,7 @@ function greetingReply(query, isFirstUserMessage) {
   return `${opening}
 PARISA MEMORY PORTAL-এ আপনাকে স্বাগতম।
 
-আমি পারিসা ও রুবেলের সম্পর্কের ইতিহাস, নির্দিষ্ট তারিখের আসল chat history, ছবি ও screenshot বিশ্লেষণ, সম্পর্কের timeline এবং বাংলাদেশের আইন ও ইসলামিক দৃষ্টিকোণ থেকে তথ্য ব্যাখ্যা করতে পারি।
+আমি রুবেলের দেওয়া সংরক্ষিত ইতিহাস অনুযায়ী পারিসা ও রুবেলের সম্পর্কের ঘটনাপ্রবাহ, নির্দিষ্ট তারিখের আসল chat history, প্রাসঙ্গিক screenshot দেখানো, সম্পর্কের timeline এবং বাংলাদেশের আইন ও ইসলামিক দৃষ্টিকোণ থেকে তথ্য ব্যাখ্যা করতে পারি।
 
 আপনি কী জানতে চান, বলুন।`;
 }
@@ -505,7 +505,7 @@ PARISA MEMORY PORTAL-এ আপনাকে স্বাগতম।
 function capabilityReply() {
   return `আমি যা করতে পারি:
 • নির্দিষ্ট তারিখ, platform, file বা keyword দিয়ে আসল chat history খুঁজে দেখাতে পারি
-• chat message, ছবি ও screenshot বিশ্লেষণ করতে পারি
+• history search-এর সময় screenshot-এর দৃশ্যমান date/message মিলিয়ে প্রাসঙ্গিক screenshot দেখাতে পারি; সাধারণভাবে screenshot পড়ি না
 • পারিসা ও রুবেলের সম্পর্কের timeline এবং আচরণগত পরিবর্তন ব্যাখ্যা করতে পারি
 • বাংলাদেশের বিবাহ ও পারিবারিক আইন এবং ইসলামিক দৃষ্টিকোণ থেকে তথ্য দিতে পারি
 
@@ -555,6 +555,115 @@ function screenshotsForHistoryRows(rows) {
       folderName: file.folderName || "Screenshots",
       date: file.date,
     }));
+}
+
+// Screenshot pixels are inspected only for an explicit screenshot/history
+// search.  Normal image uploads and camera/video frames never enter this path.
+const screenshotEvidenceCache = new Map();
+const SCREENSHOT_SCAN_LIMIT = 12;
+
+function parseScreenshotEvidence(text) {
+  const raw = String(text || "").trim();
+  try {
+    const parsed = JSON.parse(raw.match(/\{[\s\S]*\}/)?.[0] || raw);
+    return {
+      dates: Array.isArray(parsed.dates) ? parsed.dates.map(String).filter(d => /^\d{4}-\d{2}-\d{2}$/.test(d)) : [],
+      times: Array.isArray(parsed.times) ? parsed.times.map(String).filter(Boolean).slice(0, 20) : [],
+      text: String(parsed.text || "").slice(0, 3000),
+    };
+  } catch {
+    const dates = [...raw.matchAll(/\b(20\d{2})[-\/](\d{1,2})[-\/](\d{1,2})\b/g)]
+      .map(m => `${m[1]}-${m[2].padStart(2, "0")}-${m[3].padStart(2, "0")}`);
+    return { dates, times: [], text: raw.slice(0, 3000) };
+  }
+}
+
+async function inspectScreenshotForSearch(file) {
+  if (!file?.id) return null;
+  if (screenshotEvidenceCache.has(file.id)) return screenshotEvidenceCache.get(file.id);
+  const auth = getDriveAuth();
+  if (!auth || !geminiPool.size) return null;
+  try {
+    const drive = google.drive({ version: "v3", auth });
+    const meta = await drive.files.get({ fileId: file.id, fields: "name,mimeType,createdTime,modifiedTime" });
+    const mimeType = meta.data.mimeType || "image/jpeg";
+    if (!mimeType.startsWith("image/")) return null;
+    const media = await drive.files.get({ fileId: file.id, alt: "media" }, { responseType: "arraybuffer" });
+    const data = Buffer.from(media.data).toString("base64");
+    const body = {
+      systemInstruction: {
+        role: "system",
+        parts: [{
+          text: "তুমি screenshot search-এর evidence extractor। ছবির ভেতরে দৃশ্যমান date, time এবং message-এর ছোট অংশই নাও। অনুমান করবে না। শুধু JSON দাও: {\"dates\":[\"YYYY-MM-DD\"],\"times\":[],\"text\":\"দৃশ্যমান text\"}. কিছু স্পষ্ট না হলে empty array/string দাও।"
+        }]
+      },
+      contents: [{
+        role: "user",
+        parts: [{
+          text: `এই screenshot-টি শুধু search matching-এর জন্য দেখো। Drive filename: ${meta.data.name || file.name || ""}; created date: ${(meta.data.createdTime || "").slice(0, 10)}`
+        }, { inlineData: { mimeType, data } }]
+      }],
+      generationConfig: { temperature: 0, maxOutputTokens: 700 },
+    };
+    const raw = await tryGemini(body);
+    const evidence = parseScreenshotEvidence(raw);
+    screenshotEvidenceCache.set(file.id, evidence);
+    return evidence;
+  } catch (e) {
+    console.warn("screenshot search evidence:", e.message);
+    return null;
+  }
+}
+
+async function screenshotsForHistorySearch(query, rows) {
+  const exactDates = new Set(rows.map(row => String(row.ts || "").slice(0, 10)).filter(Boolean));
+  const q = normalizeSearchText(String(query || "")).replace(/[০-৯]/g, d => String("০১২৩৪৫৬৭৮৯".indexOf(d)));
+  const monthMap = {
+    january:"01",february:"02",march:"03",april:"04",may:"05",june:"06",july:"07",august:"08",september:"09",october:"10",november:"11",december:"12",
+    জানুয়ারি:"01",ফেব্রুয়ারি:"02",মার্চ:"03",এপ্রিল:"04",মে:"05",জুন:"06",জুলাই:"07",আগস্ট:"08",সেপ্টেম্বর:"09",অক্টোবর:"10",নভেম্বর:"11",ডিসেম্বর:"12",
+  };
+  const iso = q.match(/\b(20\d{2})[./-](\d{1,2})[./-](\d{1,2})\b/);
+  if (iso) exactDates.add(`${iso[1]}-${iso[2].padStart(2, "0")}-${iso[3].padStart(2, "0")}`);
+  const word = q.match(/\b(\d{1,2})\s+([^\s]+?)(?:ের|এর|তারিখে)?\s+(20\d{2})\b/i)
+    || q.match(/\b(20\d{2})\s+সালের?\s+(\d{1,2})\s+([^\s]+?)(?:ের|এর|তারিখে)?\b/i);
+  if (word) {
+    const year = /^\d{4}$/.test(word[1]) ? word[1] : word[3];
+    const day = /^\d{4}$/.test(word[1]) ? word[2] : word[1];
+    const yearFirst = /^\d{4}$/.test(word[1]);
+    const monthName = (yearFirst ? word[3] : word[2]).toLowerCase();
+    if (monthMap[monthName]) exactDates.add(`${year}-${monthMap[monthName]}-${day.padStart(2, "0")}`);
+  }
+  const allScreenshots = driveFileList.filter(file => file.category === "screenshot");
+  if (!allScreenshots.length) return [];
+
+  // Filename/metadata is a fast first pass; pixel inspection is used only
+  // when this explicit request needs a date that the filename does not carry.
+  const fast = allScreenshots
+    .map(file => ({ ...file, date: extractDateFromScreenshotName(file.name) }))
+    .filter(file => file.date && exactDates.has(file.date));
+  const selected = new Map(fast.map(file => [file.id, file]));
+  if (exactDates.size && selected.size < 5) {
+    const candidates = allScreenshots.filter(file => !selected.has(file.id)).slice(0, SCREENSHOT_SCAN_LIMIT);
+    const inspected = await Promise.all(candidates.map(async file => ({
+      file, evidence: await inspectScreenshotForSearch(file)
+    })));
+    for (const { file, evidence } of inspected) {
+      if (evidence?.dates?.some(date => exactDates.has(date))) {
+        selected.set(file.id, {
+          ...file,
+          date: evidence.dates.find(date => exactDates.has(date)),
+          evidenceText: evidence.text,
+        });
+      }
+      if (selected.size >= 5) break;
+    }
+  }
+  return [...selected.values()].slice(0, 5).map(file => ({
+    id: file.id,
+    name: file.name,
+    folderName: file.folderName || "Screenshots",
+    date: file.date || null,
+  }));
 }
 
 // ─── Google Drive ────────────────────────────────────────────────
@@ -820,9 +929,9 @@ function buildSystemPrompt(userName = "আপনি", userQuery = "", suppliedSe
 তোমার কাজ:
 - রুবেল ও পারিসার সম্পর্কের সত্য ইতিহাস নিরপেক্ষভাবে বিশ্লেষণ করে উত্তর দেওয়া
 - চ্যাট হিস্টরি থেকে নির্দিষ্ট তারিখ ও তথ্য হুবহু মূল ভাষায় উদ্ধৃত করা
-- স্ক্রিনশট folder থেকে প্রাসঙ্গিক ছবি [IMAGE:FILE_ID] format দিয়ে দেখানো
+- user স্পষ্টভাবে history/screenshot search করলে filename-এর পাশাপাশি screenshot-এর দৃশ্যমান date/message মিলিয়ে প্রাসঙ্গিক ছবি [IMAGE:FILE_ID] format দিয়ে দেখানো
 - বাংলাদেশের বিবাহ আইন ও ইসলামিক দৃষ্টিকোণ থেকে বিশ্লেষণ করা
-- সর্বদা সত্য তথ্য বলা — অনুমান বা বানানো কথা নয়
+- রুবেলের দেওয়া সংরক্ষিত history এবং exact chat archive-কে এই portal-এর authoritative সত্য হিসেবে ধরে উত্তর দেওয়া; এর বাইরে কোনো কথা বানানো নয়
 
 কঠোর নিয়ম — এগুলো কখনো ভাঙবে না:
 - সর্বদা পরিষ্কার বাংলায় উত্তর দেবে
@@ -898,9 +1007,9 @@ RULE 4 — না পেলে সৎভাবে বলবে:
 কখনো ফাঁকা table বা বানানো data দেবে না।
 
 RULE 5 — screenshot content:
-কোনো screenshot-এর ভেতরের লেখা নিজে থেকে পড়বে, OCR করবে বা বিশ্লেষণ করবে না।
-user screenshot দেখতে চাইলে শুধু ছবিটি দেখাবে।
-screenshot-এর message, sender, date বা text সম্পর্কে প্রমাণ ছাড়া কোনো কথা বলবে না।
+সাধারণ image attachment, camera, audio call বা video call-এ screenshot/image OCR বা vision analysis করবে না।
+user history/screenshot search করলে তবেই matching-এর জন্য screenshot-এর দৃশ্যমান date/message inspect করা যাবে; extracted text উত্তর হিসেবে বানিয়ে দেখানো যাবে না।
+screenshot-এর message, sender বা date সম্পর্কে pixel evidence না থাকলে তা বলবে না।
 ════════════════════════════════════════════════════════════════
 
 ⚠️ TABLE ব্যবহারের কঠোর নিয়ম:
@@ -1431,7 +1540,7 @@ function mount(prefix) {
           globalId: m.globalId,
         }));
         await refreshDriveMemory().catch(() => {});
-        const screenshots = continuation ? [] : screenshotsForHistoryRows(searchData.rows);
+        const screenshots = continuation ? [] : await screenshotsForHistorySearch(searchQuery, searchData.rows);
         const finalReply = chatHistory.length
           ? `আপনার অনুরোধ অনুযায়ী ${chatHistory.length}টি আসল মেসেজ দেখানো হলো।${screenshots.length ? " একই তারিখের প্রাসঙ্গিক screenshot-ও দেখানো হয়েছে।" : ""}`
           : offset > 0
@@ -1515,6 +1624,12 @@ function mount(prefix) {
     try {
       const { prompt = "এই ফাইলটা বিশ্লেষণ করে বাংলায় বল।", file, mime, userName = "আপনি" } = req.body || {};
       if (!file) return res.status(400).json({ reply: "ফাইল পাইনি।" });
+      // Image analysis is intentionally disabled outside the explicit
+      // screenshot-search path above. This prevents automatic OCR from
+      // attachments, camera frames, and video-call snapshots.
+      if (String(mime || "").startsWith("image/") || String(file).startsWith("data:image/")) {
+        return res.json({ reply: "ছবিটি দেখানো হলো। এর ভেতরের লেখা স্বয়ংক্রিয়ভাবে পড়া বা বিশ্লেষণ করা হয় না।" });
+      }
       const sys = buildSystemPrompt(userName);
       const b64 = String(file).split(",").pop();
       const mt = mime || (String(file).match(/^data:(.*?);base64/) || [])[1] || "application/octet-stream";
