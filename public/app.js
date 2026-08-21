@@ -101,6 +101,9 @@ PARISA MEMORY PORTAL এ আপনাকে স্বাগতম।
     if (m.role === "assistant" && m.text) bubble.appendChild(makeMsgActions(m.text, bubble));
     row.appendChild(bubble);
     messagesEl.appendChild(row);
+    if (m.role === "assistant" && m.chatHistory?.length) {
+      appendChatHistory(m.chatHistory, m.screenshots || [], false);
+    }
     if (animate) scrollToBottom();
     return { row, bubble, body };
   }
@@ -256,73 +259,17 @@ PARISA MEMORY PORTAL এ আপনাকে স্বাগতম।
     return html;
   }
 
-  // Screenshot placeholder → wrap with container (auto-analysis হবে)
+  // Screenshot placeholder → show the image only. Screenshot OCR/analysis is
+  // intentionally disabled because automatic readings were unreliable.
   function replaceSsPlaceholders(html, imgBase) {
     return html.replace(/SSPLACEHOLDER_([A-Za-z0-9_\-]+)_SSPLACEHOLDER/g, (_, fid) =>
       `<div class="ss-wrap" data-ssid="${fid}">` +
         `<img src="${imgBase}${fid}" class="drive-img" alt="স্ক্রিনশট" loading="lazy" onerror="this.style.display='none'">` +
-        `<div class="ss-auto-label" id="ssl-${fid}">🔍 স্ক্রিনশট পড়া হচ্ছে…</div>` +
-        `<button class="analyze-ss-btn" data-ssid="${fid}" style="display:none">🔄 পুনরায় বিশ্লেষণ</button>` +
-        `<div class="ss-result" id="ssr-${fid}"></div>` +
+        `<div class="ss-view-label">স্ক্রিনশট — শুধু দেখা যাচ্ছে</div>` +
       `</div>`
     );
   }
 
-  // ── Screenshot Auto-Analysis ──────────────────────────────────────
-  const _analyzedSS = new Set();
-
-  async function autoAnalyzeScreenshot(fid) {
-    if (_analyzedSS.has(fid)) return;
-    _analyzedSS.add(fid);
-    const resultEl  = document.getElementById("ssr-" + fid);
-    const labelEl   = document.getElementById("ssl-" + fid);
-    const btn       = document.querySelector(`.analyze-ss-btn[data-ssid="${fid}"]`);
-    if (!resultEl) return;
-
-    try {
-      const r = await fetch(api("/analyze-screenshot"), {
-        method:  "POST",
-        headers: { "Content-Type": "application/json" },
-        body:    JSON.stringify({ fileId: fid }),
-      });
-      const data  = await r.json();
-      const reply = data.reply || "পড়া গেল না।";
-      resultEl.innerHTML = renderMarkdown(reply);
-      resultEl.classList.add("show");
-      if (labelEl) labelEl.style.display = "none";
-      // btn stays hidden (display:none) — auto-analysis done, no button needed
-      scrollToBottom();
-    } catch {
-      _analyzedSS.delete(fid); // retry allowed
-      if (labelEl) labelEl.textContent = "⚠️ পড়তে পারিনি — পুনরায় চেষ্টা হচ্ছে…";
-      if (btn)     btn.style.display   = "";
-      // ৫ সেকেন্ড পর auto-retry একবার
-      setTimeout(() => {
-        if (!_analyzedSS.has(fid)) autoAnalyzeScreenshot(fid);
-      }, 5000);
-    }
-  }
-
-  function autoAnalyzeScreenshots(container) {
-    container.querySelectorAll(".ss-wrap[data-ssid]").forEach(wrap => {
-      const fid = wrap.dataset.ssid;
-      if (fid && !_analyzedSS.has(fid)) {
-        // ছবি লোড হওয়ার পর analyze করো
-        const img = wrap.querySelector("img.drive-img");
-        if (img && img.complete) {
-          setTimeout(() => autoAnalyzeScreenshot(fid), 300);
-        } else if (img) {
-          img.addEventListener("load",  () => setTimeout(() => autoAnalyzeScreenshot(fid), 300), { once: true });
-          img.addEventListener("error", () => {
-            const lbl = document.getElementById("ssl-" + fid);
-            if (lbl) lbl.textContent = "⚠️ ছবি লোড হয়নি";
-          }, { once: true });
-          // fallback: ছবি load event না আসলে ৩ সেকেন্ড পরে try করো
-          setTimeout(() => autoAnalyzeScreenshot(fid), 3000);
-        }
-      }
-    });
-  }
   function scrollToBottom() { messagesEl.scrollTop = messagesEl.scrollHeight; }
   function escapeHtml(s) {
     return String(s).replace(/[&<>"']/g, m => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[m]));
@@ -777,8 +724,12 @@ PARISA MEMORY PORTAL এ আপনাকে স্বাগতম।
     renderAttachedBar();
 
     try {
-      let reply, chatHistory = null;
-      if (attachment && !attachment.mime.startsWith("image/")) {
+      let reply, chatHistory = null, screenshots = [], responseHistoryContext = null;
+      if (attachment && attachment.mime.startsWith("image/")) {
+        // Images are displayed, never OCR-read or sent to a vision model.
+        reply = "স্ক্রিনশটটি দেখানো হলো। এর ভেতরের লেখা স্বয়ংক্রিয়ভাবে পড়া বা বিশ্লেষণ করা হবে না।";
+        c.historyContext = null;
+      } else if (attachment && !attachment.mime.startsWith("image/")) {
         const r = await fetch(api("/analyze"), {
           method: "POST", headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
@@ -796,29 +747,37 @@ PARISA MEMORY PORTAL এ আপনাকে স্বাগতম।
           body: JSON.stringify({
             messages: msgs,
             userName: settings.userName,
-            image: attachment?.dataUrl,
+            historyContext: c.historyContext || null,
           }),
         });
         const chatData = await r.json();
         reply = chatData.reply;
         chatHistory = chatData.chatHistory || null;
+        screenshots = chatData.screenshots || [];
+        responseHistoryContext = chatData.historyContext || null;
+        c.historyContext = responseHistoryContext;
       }
 
       typing.remove();
-      const botMsg = { role: "assistant", text: reply || "(কোনো উত্তর নেই)" };
+      const botMsg = {
+        role: "assistant",
+        text: reply || "(কোনো উত্তর নেই)",
+        ...(chatHistory?.length ? { chatHistory, screenshots } : {}),
+      };
       c.messages.push(botMsg);
       c.updatedAt = Date.now();
       persistChats(); renderSidebar();
 
       // Typing animation + chat history bubbles
       typeOut(botMsg, () => {
-        if (chatHistory && chatHistory.length > 0) appendChatHistory(chatHistory);
+        if (chatHistory && chatHistory.length > 0) appendChatHistory(chatHistory, screenshots);
       });
       speak(botMsg.text);
 
     } catch {
       typing.remove();
       const botMsg = { role: "assistant", text: "দুঃখিত, এই মুহূর্তে যোগাযোগ করতে পারছি না।" };
+      c.historyContext = null;
       c.messages.push(botMsg);
       persistChats();
       appendMessage(botMsg);
@@ -839,7 +798,6 @@ PARISA MEMORY PORTAL এ আপনাকে স্বাগতম।
       if (i >= full.length) {
         clearInterval(iv);
         bubble.appendChild(makeMsgActions(full, bubble));
-        autoAnalyzeScreenshots(bubble); // ← screenshot auto-read
         onDone();
       }
     }, 18);
@@ -1309,7 +1267,7 @@ PARISA MEMORY PORTAL এ আপনাকে স্বাগতম।
   // These cells are populated from the server's database rows, not from
   // the language model's markdown, so message text cannot be translated
   // or truncated by the model.
-  function appendChatHistory(messages) {
+  function appendChatHistory(messages, screenshots = [], shouldScroll = true) {
     if (!messages || !messages.length) return;
     const wrap = document.createElement("div");
     wrap.className = "msg-row assistant";
@@ -1350,45 +1308,33 @@ PARISA MEMORY PORTAL এ আপনাকে স্বাগতম।
     table.appendChild(tbody);
     tableWrap.appendChild(table);
     outer.appendChild(tableWrap);
+
+    if (screenshots.length) {
+      const proofTitle = document.createElement("div");
+      proofTitle.className = "history-proof-title";
+      proofTitle.textContent = "এই তারিখের প্রাসঙ্গিক screenshot";
+      outer.appendChild(proofTitle);
+      const proof = document.createElement("div");
+      proof.className = "history-screenshots";
+      for (const shot of screenshots) {
+        const card = document.createElement("figure");
+        card.className = "history-screenshot";
+        const img = document.createElement("img");
+        img.src = `${api("/image/")}${encodeURIComponent(shot.id)}`;
+        img.alt = shot.name || "সcreenshot";
+        img.loading = "lazy";
+        const caption = document.createElement("figcaption");
+        caption.textContent = `${shot.name || "Screenshot"}${shot.date ? ` — ${shot.date}` : ""}`;
+        card.append(img, caption);
+        proof.appendChild(card);
+      }
+      outer.appendChild(proof);
+    }
+
     wrap.appendChild(outer);
     messagesEl.appendChild(wrap);
-    scrollToBottom();
+    if (shouldScroll) scrollToBottom();
   }
-
-  // ── Screenshot re-analyze button — event delegation ──────────────
-  messagesEl.addEventListener("click", async (e) => {
-    const btn = e.target.closest(".analyze-ss-btn");
-    if (!btn) return;
-    const fid = btn.dataset.ssid;
-    if (!fid) return;
-    const resultEl = document.getElementById("ssr-" + fid);
-    if (!resultEl) return;
-
-    // Force re-analyze (remove from cache so it re-fetches)
-    _analyzedSS.delete(fid);
-    btn.textContent = "🔍 পড়ছি…";
-    btn.disabled = true;
-
-    try {
-      const r = await fetch(api("/analyze-screenshot"), {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ fileId: fid }),
-      });
-      const data  = await r.json();
-      const reply = data.reply || "পড়া গেল না।";
-      resultEl.innerHTML = renderMarkdown(reply);
-      resultEl.classList.add("show");
-      _analyzedSS.add(fid);
-      speak(reply);
-    } catch {
-      resultEl.textContent = "নেটওয়ার্ক সমস্যা — আবার চেষ্টা করুন।";
-      resultEl.classList.add("show");
-    }
-    btn.textContent = "🔄 পুনরায় বিশ্লেষণ";
-    btn.disabled = false;
-    scrollToBottom();
-  });
 
   // ── PWA service worker ────────────────────────────────────────────
   if ("serviceWorker" in navigator) {

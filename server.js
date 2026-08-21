@@ -527,6 +527,36 @@ function isChatHistoryRequest(query) {
   return /\b20[2-9]\d\b|whatsapp|telegram|messenger|facebook|তারিখ|দিন|মাস|বছর|চ্যাট|হিস্টরি|মেসেজ|বার্তা|উদ্ধৃতি|প্রমাণ|কথোপকথন|conversation|message|history|show/i.test(q);
 }
 
+const HISTORY_PAGE_SIZE = 10;
+
+function isHistoryContinuation(value) {
+  return /^(আরও|আরো|বাকি|পরের|পরবর্তী|next|more|continue|চালিয়ে যাও|চালিয়ে যাও|আরও দেখাও|আরো দেখাও)/i
+    .test(normalizeSearchText(value));
+}
+
+function extractDateFromScreenshotName(name) {
+  const match = String(name || "").match(/(?:^|[^0-9])(20\d{2})[-_](\d{1,2})[-_](\d{1,2})(?:[^0-9]|$)/);
+  return match
+    ? `${match[1]}-${match[2].padStart(2, "0")}-${match[3].padStart(2, "0")}`
+    : null;
+}
+
+function screenshotsForHistoryRows(rows) {
+  const dates = new Set(rows.map(row => String(row.ts || "").slice(0, 10)).filter(Boolean));
+  if (!dates.size) return [];
+  return driveFileList
+    .filter(file => file.category === "screenshot")
+    .map(file => ({ ...file, date: extractDateFromScreenshotName(file.name) }))
+    .filter(file => file.date && dates.has(file.date))
+    .slice(0, 5)
+    .map(file => ({
+      id: file.id,
+      name: file.name,
+      folderName: file.folderName || "Screenshots",
+      date: file.date,
+    }));
+}
+
 // ─── Google Drive ────────────────────────────────────────────────
 let driveMemoryText = "";
 let driveFileList   = [];
@@ -790,7 +820,7 @@ function buildSystemPrompt(userName = "আপনি", userQuery = "", suppliedSe
 তোমার কাজ:
 - রুবেল ও পারিসার সম্পর্কের সত্য ইতিহাস নিরপেক্ষভাবে বিশ্লেষণ করে উত্তর দেওয়া
 - চ্যাট হিস্টরি থেকে নির্দিষ্ট তারিখ ও তথ্য হুবহু মূল ভাষায় উদ্ধৃত করা
-- স্ক্রিনশট folder থেকে ছবি [IMAGE:FILE_ID] format দিয়ে দেখানো
+- স্ক্রিনশট folder থেকে প্রাসঙ্গিক ছবি [IMAGE:FILE_ID] format দিয়ে দেখানো
 - বাংলাদেশের বিবাহ আইন ও ইসলামিক দৃষ্টিকোণ থেকে বিশ্লেষণ করা
 - সর্বদা সত্য তথ্য বলা — অনুমান বা বানানো কথা নয়
 
@@ -804,7 +834,7 @@ function buildSystemPrompt(userName = "আপনি", userQuery = "", suppliedSe
 - প্রমাণ না থাকলে স্পষ্ট বলবে "এই তারিখের বা বিষয়ের তথ্য আমার কাছে নেই" — কখনো বানিয়ে বলবে না
   - কেউ সালাম দিলে সালামের উত্তর দেবে, সম্মানজনকভাবে
   - শুধু প্রথম/আলাদা greeting হলে (hi, hello, হ্যালো, সালাম ইত্যাদি) একবার স্বাগত জানাবে, নিজের কাজগুলো সংক্ষেপে বলবে, তারপর জিজ্ঞাসা করবে ব্যবহারকারী কী জানতে চান। এই greeting response-এর শেষে বলবে: "আপনি কী জানতে চান, বলুন।"
-  - greeting-এর প্রস্তাবিত উত্তর: "ওয়া আলাইকুমুস সালাম। PARISA Memory Portal-এ আপনাকে স্বাগতম। আমি নির্দিষ্ট তারিখের chat history থেকে আসল message দেখাতে, screenshot-এর লেখা পড়তে, সম্পর্কের timeline বিশ্লেষণ করতে এবং প্রয়োজন হলে আইন ও ইসলামিক দৃষ্টিকোণ ব্যাখ্যা করতে পারি। আপনি কী জানতে চান, বলুন।"
+  - greeting-এর প্রস্তাবিত উত্তর: "ওয়া আলাইকুমুস সালাম। PARISA Memory Portal-এ আপনাকে স্বাগতম। আমি নির্দিষ্ট তারিখের chat history থেকে আসল message দেখাতে, প্রাসঙ্গিক screenshot দেখাতে, সম্পর্কের timeline বিশ্লেষণ করতে এবং প্রয়োজন হলে আইন ও ইসলামিক দৃষ্টিকোণ ব্যাখ্যা করতে পারি। আপনি কী জানতে চান, বলুন।"
   - শুধু hi/hello হলে সালামের উত্তর নয়; "হ্যালো" দিয়ে স্বাগত জানাবে। সালাম হলে সালামের উত্তর দেবে। একই greeting response প্রতিটি সাধারণ প্রশ্নের উত্তরে পুনরাবৃত্তি করবে না।
   - কেউ "তুমি কী কী পারো?" বা capability জিজ্ঞাসা করলে greeting-এর মতো সংক্ষিপ্ত capability list দেবে এবং শেষে "আপনি কী জানতে চান, বলুন।" বলবে।
   - greeting বা capability প্রশ্নে chat database search/table করবে না এবং কোনো পুরোনো message উদ্ধৃত করবে না।
@@ -868,9 +898,9 @@ RULE 4 — না পেলে সৎভাবে বলবে:
 কখনো ফাঁকা table বা বানানো data দেবে না।
 
 RULE 5 — screenshot content:
-কোনো screenshot-এর ভেতরের লেখা তুমি জানো না।
-কেউ screenshot-এ কী লেখা আছে জিজ্ঞেস করলে বলবে: "স্ক্রিনশটটি স্বয়ংক্রিয়ভাবে বিশ্লেষণ হচ্ছে।"
-কখনো screenshot-এর content নিজে থেকে বলবে না।
+কোনো screenshot-এর ভেতরের লেখা নিজে থেকে পড়বে, OCR করবে বা বিশ্লেষণ করবে না।
+user screenshot দেখতে চাইলে শুধু ছবিটি দেখাবে।
+screenshot-এর message, sender, date বা text সম্পর্কে প্রমাণ ছাড়া কোনো কথা বলবে না।
 ════════════════════════════════════════════════════════════════
 
 ⚠️ TABLE ব্যবহারের কঠোর নিয়ম:
@@ -910,7 +940,7 @@ Table cell-এর text word-wrap হবে — লম্বা message নিচ
 ধাপ ৪ — SCREENSHOT (প্রাসঙ্গিক ছবি থাকলে):
 ### সংযুক্ত ডিজিটাল প্রমাণ
 [IMAGE:FILE_ID]
-এই screenshot-এ লেখা আছে: "[screenshot-এর মূল text হুবহু পড়ে লিখবে]"
+ছবিটি শুধু দেখাবে; screenshot-এর ভেতরের লেখা নিজে থেকে পড়বে বা বিশ্লেষণ করবে না।
 (screenshot content নিয়ে আলাদা table বানাবে না)
 
 ধাপ ৫ — ANALYSIS:
@@ -1249,6 +1279,13 @@ function mount(prefix) {
 
   // ── Screenshot Vision Analysis — Drive ছবির ভেতরের লেখা পড়া ────────
   app.post(prefix + "/analyze-screenshot", async (req, res) => {
+    // Screenshot viewing is intentionally image-only. OCR/vision analysis
+    // caused unreliable answers, so this legacy endpoint must not read the
+    // image even if an old client still calls it.
+    return res.status(410).json({
+      reply: "স্ক্রিনশট শুধু দেখানো হবে। এর ভেতরের লেখা স্বয়ংক্রিয়ভাবে পড়া বা বিশ্লেষণ করা হয় না।",
+    });
+    /*
     try {
       const { fileId, prompt } = req.body || {};
       if (!fileId) return res.status(400).json({ reply: "fileId দাও।" });
@@ -1313,6 +1350,7 @@ function mount(prefix) {
       console.error("analyze-screenshot error:", e.message);
       res.status(500).json({ reply: "স্ক্রিনশট বিশ্লেষণে সমস্যা হয়েছে।" });
     }
+    */
   });
 
   // ── Drive Image Proxy ─────────────────────────────────────────────
@@ -1339,12 +1377,23 @@ function mount(prefix) {
   // ── Chat ──────────────────────────────────────────────────────────
   app.post(prefix + "/chat", async (req, res) => {
     try {
-      const { messages = [], userName = "আপনি", image } = req.body || {};
+      const {
+        messages = [],
+        userName = "আপনি",
+        image,
+        historyContext = null,
+      } = req.body || {};
       refreshDriveMemory().catch(() => {});
 
       // ── প্রতি ৩০ মিনিটে Drive auto-refresh ──
       const lastUserMsg2 = messages[messages.length - 1]?.text || "";
-      const searchQuery = buildSearchContext(messages);
+      const continuation = Boolean(
+        historyContext?.query &&
+        isHistoryContinuation(lastUserMsg2)
+      );
+      const searchQuery = continuation
+        ? String(historyContext.query)
+        : buildSearchContext(messages);
       const searchData = searchChatDBRecords(searchQuery);
       const userTurns = messages.filter(m => m && m.role === "user" && String(m.text || "").trim());
       const isFirstUserMessage = userTurns.length === 1;
@@ -1368,11 +1417,11 @@ function mount(prefix) {
       // A history table is a database operation, not an AI-generation
       // operation. Return exact rows immediately so a slow or unavailable
       // provider can never delay, rewrite, or truncate the archive result.
-      if (!image && searchData.isHistoryQuery) {
-        const finalReply = searchData.rows.length
-          ? "আপনার অনুরোধের সঙ্গে মিলে যাওয়া আসল মেসেজগুলো নিচের টেবিলে দেখানো হয়েছে।"
-          : "এই তারিখ বা বিষয়ের কোনো মেসেজ ডেটাবেসে পাওয়া যায়নি।";
-        const chatHistory = searchData.rows.map(m => ({
+      if (searchData.isHistoryQuery) {
+        const offset = continuation
+          ? Math.max(0, Number(historyContext.offset) || 0)
+          : 0;
+        const chatHistory = searchData.rows.slice(offset, offset + HISTORY_PAGE_SIZE).map(m => ({
           ts: m.ts,
           snd: m.snd,
           sndOrig: m.sndOrig,
@@ -1381,23 +1430,39 @@ function mount(prefix) {
           fileId: m.fileId,
           globalId: m.globalId,
         }));
+        await refreshDriveMemory().catch(() => {});
+        const screenshots = continuation ? [] : screenshotsForHistoryRows(searchData.rows);
+        const finalReply = chatHistory.length
+          ? `আপনার অনুরোধ অনুযায়ী ${chatHistory.length}টি আসল মেসেজ দেখানো হলো।${screenshots.length ? " একই তারিখের প্রাসঙ্গিক screenshot-ও দেখানো হয়েছে।" : ""}`
+          : offset > 0
+            ? "এই history-র আর কোনো পরের message পাওয়া যায়নি।"
+            : "এই তারিখ বা বিষয়ের কোনো মেসেজ ডেটাবেসে পাওয়া যায়নি।";
+        const nextOffset = offset + chatHistory.length;
+        const nextHistoryContext = {
+          query: searchQuery,
+          offset: nextOffset,
+          hasMore: nextOffset < searchData.rows.length,
+        };
         logFirebase({ userName, userMessage: lastUserMsg2, aiReply: finalReply, provider: "deterministic-search", hasImage: false }).catch(() => {});
         sendTelegram(`👤 ${userName}: ${lastUserMsg2}\n\n🤖 PARISA: ${finalReply}`).catch(() => {});
-        return res.json({ reply: finalReply, provider: "deterministic-search", chatHistory });
+        return res.json({
+          reply: finalReply,
+          provider: "deterministic-search",
+          chatHistory,
+          screenshots,
+          historyContext: nextHistoryContext,
+        });
+      }
+      if (image) {
+        const finalReply = "ছবিটি দেখানো হলো। এর ভেতরের লেখা স্বয়ংক্রিয়ভাবে পড়া বা বিশ্লেষণ করা হয় না।";
+        logFirebase({ userName, userMessage: lastUserMsg2, aiReply: finalReply, provider: "deterministic-image-display", hasImage: true }).catch(() => {});
+        return res.json({ reply: finalReply, provider: "deterministic-image-display", chatHistory: [] });
       }
       const sys = buildSystemPrompt(userName, searchQuery, searchData);
       const contents = [];
       for (const m of messages) {
         if (!m || !m.role || !m.text) continue;
         contents.push({ role: m.role === "assistant" ? "model" : "user", parts: [{ text: String(m.text) }] });
-      }
-      if (image && contents.length) {
-        const last = contents[contents.length - 1];
-        if (last.role === "user") {
-          const b64 = String(image).split(",").pop();
-          const mime = (String(image).match(/^data:(.*?);base64/) || [])[1] || "image/jpeg";
-          last.parts.push({ inlineData: { mimeType: mime, data: b64 } });
-        }
       }
       const body = {
         systemInstruction: { role: "system", parts: [{ text: sys }] },
