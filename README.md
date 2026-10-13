@@ -1,151 +1,107 @@
-<!-- Hero badges and colorful header (badges provide visible color on GitHub) -->
+<p align="center">
+  <img src="hero-teal.svg" alt="PARISA-AI Hero Banner" width="100%"/>
+</p>
+
+<h1 align="center">PARISA-AI</h1>
 
 <p align="center">
-  <img alt="PARISA-AI hero" src="https://img.shields.io/badge/PARISA--AI-%F0%9F%92%96%20Memory%20Portal-ff4d6d?style=for-the-badge&logo=ghost" />
+  <b>চ্যাট আর্কাইভ · প্রমাণ বিশ্লেষণ · বাংলা-প্রথম ইনভেস্টিগেটিভ এআই</b><br/>
+  <i>Developed by DADA310724 · Version V-29 · Node.js + Express</i>
 </p>
 
-# PARISA‑AI — চ্যাট আর্কাইভ · প্রমাণ বিশ্লেষণ · বাংলা ইনভেস্টিগেটিভ এআই
-
-<p><em>প্রিমিয়াম‑কোয়ালিটির ব্যাকএন্ড: দ্রুত চ্যাট সার্চ, টাইমলাইন বিশ্লেষণ, Google Drive প্রমাণ ও বাংলা TTS</em></p>
-
-<!-- Badges -->
-<p>
-  <img src="https://img.shields.io/badge/version-V--29-00aaff.svg" alt="version" />
-  <img src="https://img.shields.io/badge/Node.js-%3E%3D14-339933" alt="node" />
-  <img src="https://img.shields.io/badge/lang-Bengali%20%26%20English-ff4d6d" alt="bilingual" />
-  <img src="https://img.shields.io/badge/status-INVESTIGATIVE-orange" alt="status" />
+<p align="center">
+  <img src="https://img.shields.io/badge/Node.js-18%2B-0ea5e9?logo=nodedotjs&logoColor=white" alt="Node.js"/>
+  <img src="https://img.shields.io/badge/Express-API-14b8a6?logo=express&logoColor=white" alt="Express"/>
+  <img src="https://img.shields.io/badge/Language-Bengali%20first-5eead4" alt="Bengali first"/>
+  <img src="https://img.shields.io/badge/Version-V--29-0891b2" alt="Version"/>
 </p>
 
 ---
 
-## ১ লাইনে (Styled summary)
+## 📌 সংক্ষিপ্ত পরিচয়
 
-<span style="font-weight:700">PARISA‑AI</span> — সংরক্ষিত কথোপকথন ও ডিজিটাল প্রমাণকে উৎসভিত্তিকভাবে (verbatim) সংগঠিত করে তদন্ত‑সহায়তা দেয়।
+PARISA-AI একটি বাংলা-প্রথম ইনভেস্টিগেটিভ এআই অ্যাপ্লিকেশন। এটি সংরক্ষিত চ্যাট আর্কাইভ, স্ক্রিনশট ও ডিজিটাল প্রমাণকে উৎসভিত্তিকভাবে (verbatim) সংগঠিত, অনুসন্ধান ও বিশ্লেষণ করে তদন্তে সহায়তা করে।
 
-(English: PARISA‑AI organizes archived conversations and digital evidence verbatim to assist investigative workflows.)
+## 🎯 উদ্দেশ্য
 
----
+- বড় চ্যাট ডেটা থেকে প্রয়োজনীয় তথ্য দ্রুত খুঁজে বের করা
+- প্রতিটি উত্তর যেন মূল ডেটাবেস রেকর্ড থেকে আসে, তার নিশ্চয়তা দেওয়া
+- ডিজিটাল প্রমাণের স্ক্রিনশট ও ফাইল যাচাই করা
+- বাংলা ভয়েসে ফলাফল শোনা (TTS)
+- মাসিক আচরণগত প্রবণতা পরিসংখ্যানের মাধ্যমে বোঝা
 
-## দ্রুত সারসংক্ষেপ • Quick Overview
+## ⚙️ কিভাবে কাজ করে
 
-- উদ্দেশ্য (Purpose): সংরক্ষিত চ্যাট ও স্ক্রিনশট থেকে পরীক্ষানির্ভর প্রমাণ ও টাইমলাইন বিশ্লেষণ প্রদান করা।
-- নির্মাতা (Author): DADA310724 (@DADA310724)
-- প্রযুক্তি (Tech): Node.js, Express, Google Drive API, Gemini/GROQ/OpenRouter/Deepseek, msedge-tts
-- সংস্করণ: V-29
+1. **ডেটা সংগ্রহ:** চ্যাট বার্তা ও প্রমাণ (ছবি/ফাইল) ডেটাবেসে সংরক্ষিত হয়।
+2. **প্রশ্ন গ্রহণ:** ব্যবহারকারী বাংলা বা ইংরেজিতে সাধারণ ভাষায় প্রশ্ন করেন।
+3. **কোয়েরি রূপান্তর:** প্রশ্নটি ডেটাবেস অনুসন্ধানে রূপান্তরিত হয়।
+4. **উৎসভিত্তিক উত্তর:** প্রাপ্ত আসল রেকর্ড দেখানো হয়, অনুমান নয়।
+5. **বিশ্লেষণ ও আউটপুট:** প্রয়োজনে পরিসংখ্যান, চার্ট বা বাংলা ভয়েস তৈরি হয়।
 
----
+## ✨ ফিচারসমূহ
 
-## কী করে — Capabilities (সংক্ষিপ্ত)
+| # | ফিচার | কী করে |
+|---|---|---|
+| 1 | **NL চ্যাট সার্চ** | প্রাকৃতিক ভাষায় চ্যাট খোঁজা; উত্তর মূল রেকর্ড থেকে |
+| 2 | **আচরণ বিশ্লেষণ** | মাসভিত্তিক "উষ্ণ" ও "শীতল" পরিসংখ্যান ও প্রবণতা |
+| 3 | **ড্রাইভ ও স্ক্রিনশট** | Google Drive-এর স্ক্রিনশট ও প্রমাণ সংযুক্ত ও খোঁজা |
+| 4 | **LLM ফাইল বিশ্লেষণ** | আপলোড করা ফাইলের সারসংক্ষেপ ও মূল অংশ উদ্ধৃতি |
+| 5 | **বাংলা TTS** | উত্তর ও প্রতিবেদন বাংলা ভয়েসে শোনা |
+| 6 | **Telegram ও Firebase** | Telegram বটে বার্তা গ্রহণ/উত্তর; Firebase-এ ডেটা সিঙ্ক |
 
-- NL (natural-language) সার্চ ও exact DB retrieval (chat_database.json থেকে)
-- মাসভিত্তিক আচরণ বিশ্লেষণ (warm/cold stats) ও শিফট‑পয়েন্ট ডিটেকশন
-- Google Drive screenshot ইনডেক্সিং ও [IMAGE:FILE_ID] প্রমাণ প্রদর্শন
-- ফাইল/ইমেজ/অডিও আপলোড বিশ্লেষণ (LLM‑powered, provider‑pool + failover)
-- বাংলা TTS (msedge-tts) — আবেগবিবেচিত SSML
-- Telegram নোটিফিকেশন ও Firebase লগিং
+## 🧩 টেক স্ট্যাক
 
-(English bullets: NL search & exact DB retrieval, monthly behavior analytics, Drive screenshot indexing, LLM file analysis, Bengali TTS, Telegram & Firebase integration)
+| স্তর | প্রযুক্তি |
+|---|---|
+| Runtime | Node.js |
+| Web Framework | Express |
+| ডেটা | চ্যাট ও মেটাডেটা ডেটাবেস |
+| ক্লাউড | Google Drive, Firebase |
+| মেসেজিং | Telegram Bot API |
+| ভয়েস | বাংলা TTS |
 
----
-
-## কি আপডেট করা হয়েছে (What I updated for you)
-
-- README.md কে premium‑styled করে আপডেট করেছি — badges, hero badge, স্পষ্ট শিরোনাম ও bilingual summary।
-- প্রয়োজন হলে আরো ভিজ্যুয়াল অংশ (hero‑image file, SVG logo) যোগ করবো।
-
----
-
-## কিভাবে কাজ করে — How it works (3 steps)
-
-1. ইনডেক্সিং: সার্ভার স্টার্টআপে local chat_database.json লোড, Drive screenshots ইনডেক্স করে।
-2. সার্চ/ডিটারমিনিস্টিক রিটার্ন: ইউজারের NL কুয়েরি → search-context নির্মাণ → যদি history intent → exact DB rows রিটার্ন (AI ম্যানিপুলেশন নেই)।
-3. বিশ্লেষণ: প্রয়োজনে LLM pool‑এ পাঠিয়ে বিস্তারিত বিশ্লেষণ/সারাংশ আনা হয় (images: explicit flow)।
-
-(English: indexing → deterministic history retrieval → LLM-enabled analysis)
-
----
-
-## প্রধান API (Main endpoints)
-
-- POST /chat — NL প্রশ্ন / history-requests
-- POST /analyze — base64 ফাইল পাঠিয়ে LLM বিশ্লেষণ
-- POST /voice — { text, gender } → audio/mpeg (msedge-tts)
-- GET /image/:fileId — Drive image proxy
-- GET /healthz — সার্ভিস স্ট্যাটাস
-- POST /refresh-drive — Drive ইনডেক্স রিফ্রেশ
-
----
-
-## ভিজ্যুয়াল আর্কিটেকচার (Architecture)
-
-```mermaid
-flowchart LR
-  A[User (UI / API)] -->|/chat, /analyze| B[Express Server (server.js)]
-  B --> C[Local: chat_database.json]
-  B --> D[Google Drive (screenshots)]
-  B --> E[LLM Provider Pool]
-  B --> F[msedge-tts]
-  B --> G[Telegram / Firebase]
-  style B fill:#00aaff,stroke:#002b5c,color:#fff
-  style C fill:#ffefc2,stroke:#d4a017
-  style D fill:#ffd1dc,stroke:#c02f4a
-  style E fill:#e6f7ff,stroke:#0088cc
-  style G fill:#e8ffe6,stroke:#00a859
-```
-
-> Mermaid diagram visualizes request flow: User → Server → DB/Drive/LLM/TTS/Notifications.
-
----
-
-## দ্রুত সেটআপ — Quick Start
-
-1. ইন্সটল
+## 🚀 ইনস্টলেশন
 
 ```bash
+git clone https://github.com/DADA310724/PARISA-AI.git
+cd PARISA-AI
 npm install
 ```
 
-2. পরিবেশ ভেরিয়েবল (minimum)
+প্রজেক্ট রুটে `.env` ফাইল তৈরি করুন:
 
-- PORT (default 3000)
-- GOOGLE_SERVICE_ACCOUNT_JSON — Drive readonly credentials
-- GEMINI_API_KEYS / GROQ_API_KEYS / OPENROUTER_API_KEYS / DEEPSEEK_API_KEYS
-- TELEGRAM_BOT_TOKEN, TELEGRAM_CHAT_ID (optional)
-- FIREBASE_DATABASE_URL (optional)
+```env
+PORT=3000
+TELEGRAM_BOT_TOKEN=your_token_here
+FIREBASE_CONFIG=your_firebase_config
+GOOGLE_DRIVE_CREDENTIALS=your_credentials_path
+LLM_API_KEY=your_llm_key
+```
 
-3. চালান
+চালু করুন:
 
 ```bash
-npm run dev
-# অথবা
 npm start
 ```
 
----
+অ্যাপ খুলুন: `http://localhost:3000`
 
-## নিরাপত্তা ও প্রাইভেসি (Security)
+## 🔐 নিরাপত্তা নোট
 
-- chat_database.json ও Drive ক্রেডেনশিয়াল সংবেদনশীল; production‑এ সিক্রেট ম্যানেজার, VPC/Firewall ব্যবহার করুন।
-- সার্ভার history‑rows কখনো AI দ্বারা মডিফাই করে না — database rows হুবহু সরবরাহ করা হয়।
+- সব API কী ও টোকেন `.env`-এ রাখুন, কোডে নয়।
+- সংবেদনশীল প্রমাণ ডেটার জন্য অ্যাক্সেস কন্ট্রোল নিশ্চিত করুন।
+- ব্যবহারকারী নিজ দেশের আইন মেনে এটি ব্যবহার করবেন।
 
----
+## 🗂️ রোডম্যাপ
 
-## bilingual summary (সংক্ষিপ্ত — BN / EN)
+- [ ] আরও ভাষা সমর্থন
+- [ ] উন্নত চার্ট ও ড্যাশবোর্ড
+- [ ] মোবাইল-ফ্রেন্ডলি ইন্টারফেস
 
-- BN: PARISA‑AI — চ্যাট ও প্রমাণ বিশ্লেষণের জন্য একটি বাংলা‑প্রথম ইনভেস্টিগেটিভ সার্ভার।
-- EN: PARISA‑AI — A Bengali‑first investigative backend for chat & evidence analysis.
+## 👤 নির্মাতা
 
----
-
-## Want more premium visuals?
-
-I can:
-- add an SVG hero/logo file (assets/hero.svg) and update README to use it
-- add badges for CI, license, downloads
-- expand bilingual docs & deploy guides
-
-বলুন, আমি assets (SVG hero) আপলোড করে README‑কে hero image‑সহ আবার আপডেট করে দেব।
+**DADA310724**: PARISA-AI-এর ডেভেলপার।
 
 ---
 
-Made with care by DADA310724 — PARISA Memory Portal
+<p align="center"><sub>© PARISA-AI · Developed by DADA310724</sub></p>
