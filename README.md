@@ -1,66 +1,66 @@
 <p align="center">
-  <img src="hero-teal.svg" alt="PARISA-AI Hero Banner" width="100%"/>
+  <img src="hero-teal.svg" alt="PARISA-AI Banner" width="100%"/>
 </p>
 
 <h1 align="center">PARISA-AI</h1>
 
 <p align="center">
-  <b>চ্যাট আর্কাইভ · প্রমাণ বিশ্লেষণ · বাংলা-প্রথম ইনভেস্টিগেটিভ এআই</b><br/>
-  <i>Developed by DADA310724 · Version V-29 · Node.js + Express</i>
-</p>
-
-<p align="center">
-  <img src="https://img.shields.io/badge/Node.js-18%2B-0ea5e9?logo=nodedotjs&logoColor=white" alt="Node.js"/>
-  <img src="https://img.shields.io/badge/Express-API-14b8a6?logo=express&logoColor=white" alt="Express"/>
-  <img src="https://img.shields.io/badge/Language-Bengali%20first-5eead4" alt="Bengali first"/>
-  <img src="https://img.shields.io/badge/Version-V--29-0891b2" alt="Version"/>
+  <b>Bengali-first AI assistant for searching and summarizing a local chat archive</b><br/>
+  <i>THIS APPS DEVELOPMENT BY DADA · Version V-29 · Node.js + Express</i>
 </p>
 
 ---
 
-## 📌 সংক্ষিপ্ত পরিচয়
+## Overview
 
-PARISA-AI একটি বাংলা-প্রথম ইনভেস্টিগেটিভ এআই অ্যাপ্লিকেশন। এটি সংরক্ষিত চ্যাট আর্কাইভ, স্ক্রিনশট ও ডিজিটাল প্রমাণকে উৎসভিত্তিকভাবে (verbatim) সংগঠিত, অনুসন্ধান ও বিশ্লেষণ করে তদন্তে সহায়তা করে।
+PARISA-AI is a Node.js and Express server that gives a Bengali-first AI assistant access to a locally stored chat archive. The assistant can search stored messages in natural language, summarize uploaded files, and read replies aloud in Bengali.
 
-## 🎯 উদ্দেশ্য
+> **Privacy notice:** Chat archives contain other people's personal messages. Use this software only with data you are authorized to process, and only with the consent of the people whose messages it contains. Chat data files, API keys, and credentials are not included in this repository.
 
-- বড় চ্যাট ডেটা থেকে প্রয়োজনীয় তথ্য দ্রুত খুঁজে বের করা
-- প্রতিটি উত্তর যেন মূল ডেটাবেস রেকর্ড থেকে আসে, তার নিশ্চয়তা দেওয়া
-- ডিজিটাল প্রমাণের স্ক্রিনশট ও ফাইল যাচাই করা
-- বাংলা ভয়েসে ফলাফল শোনা (TTS)
-- মাসিক আচরণগত প্রবণতা পরিসংখ্যানের মাধ্যমে বোঝা
+## Features
 
-## ⚙️ কিভাবে কাজ করে
-
-1. **ডেটা সংগ্রহ:** চ্যাট বার্তা ও প্রমাণ (ছবি/ফাইল) ডেটাবেসে সংরক্ষিত হয়।
-2. **প্রশ্ন গ্রহণ:** ব্যবহারকারী বাংলা বা ইংরেজিতে সাধারণ ভাষায় প্রশ্ন করেন।
-3. **কোয়েরি রূপান্তর:** প্রশ্নটি ডেটাবেস অনুসন্ধানে রূপান্তরিত হয়।
-4. **উৎসভিত্তিক উত্তর:** প্রাপ্ত আসল রেকর্ড দেখানো হয়, অনুমান নয়।
-5. **বিশ্লেষণ ও আউটপুট:** প্রয়োজনে পরিসংখ্যান, চার্ট বা বাংলা ভয়েস তৈরি হয়।
-
-## ✨ ফিচারসমূহ
-
-| # | ফিচার | কী করে |
+| # | Feature | What it does |
 |---|---|---|
-| 1 | **NL চ্যাট সার্চ** | প্রাকৃতিক ভাষায় চ্যাট খোঁজা; উত্তর মূল রেকর্ড থেকে |
-| 2 | **আচরণ বিশ্লেষণ** | মাসভিত্তিক "উষ্ণ" ও "শীতল" পরিসংখ্যান ও প্রবণতা |
-| 3 | **ড্রাইভ ও স্ক্রিনশট** | Google Drive-এর স্ক্রিনশট ও প্রমাণ সংযুক্ত ও খোঁজা |
-| 4 | **LLM ফাইল বিশ্লেষণ** | আপলোড করা ফাইলের সারসংক্ষেপ ও মূল অংশ উদ্ধৃতি |
-| 5 | **বাংলা TTS** | উত্তর ও প্রতিবেদন বাংলা ভয়েসে শোনা |
-| 6 | **Telegram ও Firebase** | Telegram বটে বার্তা গ্রহণ/উত্তর; Firebase-এ ডেটা সিঙ্ক |
+| 1 | Natural-language search | Answers questions about a local chat database, with date, platform, and file filters |
+| 2 | Message statistics | Computes monthly message counts and simple keyword-based trends at startup |
+| 3 | Drive file access | Lists files from configured Google Drive folders and refreshes them periodically |
+| 4 | File analysis | Analyzes uploaded images, PDFs, text, audio, and video with a Gemini model |
+| 5 | Bengali text-to-speech | Converts replies to Bengali speech using Microsoft Edge TTS voices |
+| 6 | Notifications and logging | Sends conversation copies to a Telegram chat and logs events to Firebase |
+| 7 | Provider failover | Rotates across multiple API keys and providers (Gemini, Groq, OpenRouter, DeepSeek) and skips keys that return rate-limit or authorization errors |
 
-## 🧩 টেক স্ট্যাক
+## How It Works
 
-| স্তর | প্রযুক্তি |
+1. On startup, the server loads `chat_database.json` into memory, builds a catalog of platforms and files, and computes monthly statistics.
+2. A request to `/chat` builds a search context from recent messages, queries the in-memory archive, and optionally matches Drive screenshots by date.
+3. The matched records and system instructions go to the first available language model. If a key fails, the next key or provider is used.
+4. The reply is cleaned, optionally forwarded to Telegram, logged to Firebase, and returned to the client.
+5. `/voice` converts text to Bengali speech with retry logic. `/analyze` handles uploaded files.
+
+## Endpoints
+
+| Method | Path | Purpose |
+|---|---|---|
+| POST | `/chat` | Chat with the assistant, with optional image input |
+| POST | `/analyze` | Analyze an uploaded file |
+| POST | `/voice` | Return Bengali speech as MP3 |
+| GET | `/drive` | List Drive files by category |
+| POST | `/drive/refresh` | Force a Drive refresh |
+| POST | `/log` | Write a custom event to the log |
+
+## Tech Stack
+
+| Layer | Technology |
 |---|---|
-| Runtime | Node.js |
-| Web Framework | Express |
-| ডেটা | চ্যাট ও মেটাডেটা ডেটাবেস |
-| ক্লাউড | Google Drive, Firebase |
-| মেসেজিং | Telegram Bot API |
-| ভয়েস | বাংলা TTS |
+| Runtime | Node.js (ES modules) |
+| Web framework | Express, CORS |
+| Storage | Local JSON file, Firebase Realtime Database |
+| Cloud | Google Drive API (googleapis) |
+| AI providers | Gemini, Groq, OpenRouter, DeepSeek |
+| Voice | msedge-tts |
+| Messaging | Telegram Bot API |
 
-## 🚀 ইনস্টলেশন
+## Installation
 
 ```bash
 git clone https://github.com/DADA310724/PARISA-AI.git
@@ -68,40 +68,33 @@ cd PARISA-AI
 npm install
 ```
 
-প্রজেক্ট রুটে `.env` ফাইল তৈরি করুন:
+Create a `.env` file in the project root and do not commit it:
 
 ```env
 PORT=3000
-TELEGRAM_BOT_TOKEN=your_token_here
-FIREBASE_CONFIG=your_firebase_config
-GOOGLE_DRIVE_CREDENTIALS=your_credentials_path
-LLM_API_KEY=your_llm_key
+BASE_PATH=/
+TELEGRAM_BOT_TOKEN=your_token
+TELEGRAM_CHAT_ID=your_chat_id
+FIREBASE_DATABASE_URL=your_database_url
+GEMINI_API_KEYS=key1,key2
+GROQ_API_KEYS=key1,key2
+OPENROUTER_API_KEY=your_key
+DEEPSEEK_API_KEY=your_key
 ```
 
-চালু করুন:
+Start the server with `npm start`, then open `http://localhost:3000`.
 
-```bash
-npm start
-```
+## Security Notes
 
-অ্যাপ খুলুন: `http://localhost:3000`
+- Keep all keys and tokens in `.env`. Never put them in source code.
+- Add `.env`, `chat_database.json`, and any Google service-account JSON to `.gitignore`.
+- Restrict Drive and Firebase permissions to the minimum needed.
+- Review what is sent to third-party AI providers before processing sensitive data.
 
-## 🔐 নিরাপত্তা নোট
+## Developer
 
-- সব API কী ও টোকেন `.env`-এ রাখুন, কোডে নয়।
-- সংবেদনশীল প্রমাণ ডেটার জন্য অ্যাক্সেস কন্ট্রোল নিশ্চিত করুন।
-- ব্যবহারকারী নিজ দেশের আইন মেনে এটি ব্যবহার করবেন।
-
-## 🗂️ রোডম্যাপ
-
-- [ ] আরও ভাষা সমর্থন
-- [ ] উন্নত চার্ট ও ড্যাশবোর্ড
-- [ ] মোবাইল-ফ্রেন্ডলি ইন্টারফেস
-
-## 👤 নির্মাতা
-
-**DADA310724**: PARISA-AI-এর ডেভেলপার।
+**DADA**: Developer of PARISA-AI.
 
 ---
 
-<p align="center"><sub>© PARISA-AI · Developed by DADA310724</sub></p>
+<p align="center"><sub>© PARISA-AI · THIS APPS DEVELOPMENT BY DADA</sub></p>
