@@ -1,0 +1,103 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="420" viewBox="0 0 1200 420" font-family="'Inter','Poppins','Noto Sans Bengali','Segoe UI',sans-serif">
+  <defs>
+    <linearGradient id="titleGrad" x1="0" y1="0" x2="1" y2="0">
+      <stop offset="0%" stop-color="#5eead4"/>
+      <stop offset="100%" stop-color="#38bdf8"/>
+    </linearGradient>
+    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="#042f3a"/>
+      <stop offset="55%" stop-color="#083344"/>
+      <stop offset="100%" stop-color="#0c4a6e"/>
+    </linearGradient>
+    <radialGradient id="glowTeal" cx="0.5" cy="0.5" r="0.5">
+      <stop offset="0%" stop-color="#14b8a6" stop-opacity="0.55"/>
+      <stop offset="100%" stop-color="#14b8a6" stop-opacity="0"/>
+    </radialGradient>
+    <radialGradient id="glowCyan" cx="0.5" cy="0.5" r="0.5">
+      <stop offset="0%" stop-color="#0ea5e9" stop-opacity="0.5"/>
+      <stop offset="100%" stop-color="#0ea5e9" stop-opacity="0"/>
+    </radialGradient>
+    <linearGradient id="iconGrad" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="#14b8a6"/>
+      <stop offset="100%" stop-color="#0ea5e9"/>
+    </linearGradient>
+    <linearGradient id="accent" x1="0" y1="0" x2="1" y2="0">
+      <stop offset="0%" stop-color="#5eead4"/>
+      <stop offset="100%" stop-color="#a5f3fc"/>
+    </linearGradient>
+    <linearGradient id="card" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="#ffffff" stop-opacity="0.13"/>
+      <stop offset="100%" stop-color="#ffffff" stop-opacity="0.04"/>
+    </linearGradient>
+    <filter id="shadow" x="-20%" y="-20%" width="140%" height="150%">
+      <feDropShadow dx="0" dy="10" stdDeviation="12" flood-color="#000000" flood-opacity="0.35"/>
+    </filter>
+    <pattern id="grid" width="40" height="40" patternUnits="userSpaceOnUse">
+      <path d="M 40 0 L 0 0 0 40" fill="none" stroke="#ffffff" stroke-opacity="0.04" stroke-width="1"/>
+    </pattern>
+  </defs>
+
+  <rect width="1200" height="420" fill="url(#bg)"/>
+  <rect width="1200" height="420" fill="url(#grid)"/>
+  <circle cx="160" cy="60" r="260" fill="url(#glowTeal)"/>
+  <circle cx="1080" cy="400" r="300" fill="url(#glowCyan)"/>
+  <path d="M0 330 C 240 290, 420 370, 640 330 S 1000 290, 1200 340 L1200 420 L0 420 Z" fill="#14b8a6" fill-opacity="0.06"/>
+  <path d="M0 360 C 260 320, 480 395, 700 355 S 1050 320, 1200 365" fill="none" stroke="#5eead4" stroke-opacity="0.2" stroke-width="1.5"/>
+
+  <text x="70" y="150" font-size="88" font-weight="800" fill="url(#titleGrad)" letter-spacing="2">PARISA-AI</text>
+  <text x="72" y="200" font-size="26" font-weight="600" fill="#e0f7fa">চ্যাট আর্কাইভ · প্রমাণ বিশ্লেষণ · বাংলা-প্রথম ইনভেস্টিগেটিভ এআই</text>
+  <text x="72" y="238" font-size="18" fill="#7dd3d8">সংরক্ষিত কথোপকথন ও ডিজিটাল প্রমাণকে উৎসভিত্তিকভাবে সংগঠিত করে তদন্ত-সহায়তা</text>
+  <text x="72" y="272" font-size="17" font-weight="600" fill="url(#accent)" letter-spacing="0.5">Developed by DADA310724</text>
+
+  <g font-size="15" font-weight="600" fill="#e0f7fa">
+    <rect x="70" y="302" width="128" height="38" rx="19" fill="#ffffff" fill-opacity="0.08" stroke="#2dd4bf" stroke-opacity="0.7"/>
+    <text x="134" y="327" text-anchor="middle">NL সার্চ</text>
+    <rect x="210" y="302" width="158" height="38" rx="19" fill="#ffffff" fill-opacity="0.08" stroke="#38bdf8" stroke-opacity="0.7"/>
+    <text x="289" y="327" text-anchor="middle">আচরণ বিশ্লেষণ</text>
+    <rect x="380" y="302" width="138" height="38" rx="19" fill="#ffffff" fill-opacity="0.08" stroke="#5eead4" stroke-opacity="0.7"/>
+    <text x="449" y="327" text-anchor="middle">প্রমাণ যাচাই</text>
+    <rect x="530" y="302" width="118" height="38" rx="19" fill="#ffffff" fill-opacity="0.08" stroke="#38bdf8" stroke-opacity="0.7"/>
+    <text x="589" y="327" text-anchor="middle">বাংলা TTS</text>
+  </g>
+
+  <g filter="url(#shadow)">
+    <rect x="760" y="50" width="200" height="136" rx="22" fill="url(#card)" stroke="#5eead4" stroke-opacity="0.2"/>
+  </g>
+  <circle cx="800" cy="92" r="20" fill="url(#iconGrad)"/>
+  <circle cx="796" cy="88" r="7" fill="none" stroke="#ffffff" stroke-width="2.5"/>
+  <line x1="801" y1="93" x2="808" y2="100" stroke="#ffffff" stroke-width="2.5" stroke-linecap="round"/>
+  <text x="780" y="140" font-size="18" font-weight="700" fill="#ffffff">চ্যাট সার্চ</text>
+  <text x="780" y="164" font-size="13" fill="#7dd3d8">প্রাকৃতিক ভাষায় খোঁজ</text>
+
+  <g filter="url(#shadow)">
+    <rect x="980" y="50" width="200" height="136" rx="22" fill="url(#card)" stroke="#5eead4" stroke-opacity="0.2"/>
+  </g>
+  <circle cx="1020" cy="92" r="20" fill="url(#iconGrad)"/>
+  <rect x="1011" y="88" width="4" height="10" fill="#ffffff"/>
+  <rect x="1017" y="82" width="4" height="16" fill="#ffffff"/>
+  <rect x="1023" y="85" width="4" height="13" fill="#ffffff"/>
+  <rect x="1029" y="78" width="4" height="20" fill="#ffffff"/>
+  <text x="1000" y="140" font-size="18" font-weight="700" fill="#ffffff">আচরণ বিশ্লেষণ</text>
+  <text x="1000" y="164" font-size="13" fill="#7dd3d8">মাসিক উষ্ণ ও শীতল পরিসংখ্যান</text>
+
+  <g filter="url(#shadow)">
+    <rect x="760" y="200" width="200" height="136" rx="22" fill="url(#card)" stroke="#5eead4" stroke-opacity="0.2"/>
+  </g>
+  <circle cx="800" cy="242" r="20" fill="url(#iconGrad)"/>
+  <path d="M790 238 h7 l2 3 h11 v11 h-20 z" fill="#ffffff"/>
+  <text x="780" y="290" font-size="18" font-weight="700" fill="#ffffff">ড্রাইভ ও স্ক্রিনশট</text>
+  <text x="780" y="314" font-size="13" fill="#7dd3d8">ছবি ও ফাইল বিশ্লেষণ</text>
+
+  <g filter="url(#shadow)">
+    <rect x="980" y="200" width="200" height="136" rx="22" fill="url(#card)" stroke="#5eead4" stroke-opacity="0.2"/>
+  </g>
+  <circle cx="1020" cy="242" r="20" fill="url(#iconGrad)"/>
+  <path d="M1012 238 h4 l5 -4 v12 l-5 -4 h-4 z" fill="#ffffff"/>
+  <path d="M1026 236 q3 6 0 12" fill="none" stroke="#ffffff" stroke-width="2" stroke-linecap="round"/>
+  <path d="M1031 233 q5 9 0 18" fill="none" stroke="#ffffff" stroke-width="2" stroke-linecap="round" stroke-opacity="0.7"/>
+  <text x="1000" y="290" font-size="18" font-weight="700" fill="#ffffff">বাংলা ভয়েস (TTS)</text>
+  <text x="1000" y="314" font-size="13" fill="#7dd3d8">টেলিগ্রাম ও ফায়ারবেস সংযোগ</text>
+
+  <text x="72" y="383" font-size="14" fill="#67b8c0" letter-spacing="0.5">Version V-29  ·  Node.js + Express</text>
+  <text x="1128" y="383" font-size="14" fill="#67b8c0" text-anchor="end">github.com/DADA310724/PARISA-AI</text>
+</svg>
